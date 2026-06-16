@@ -4,6 +4,7 @@ import './globals.css';
 import { Sidebar } from '@/components/layout/sidebar';
 import { Topbar } from '@/components/layout/topbar';
 import { CommandPalette } from '@/components/shared/command-palette';
+import { PageTransition } from '@/components/shared/page-transition';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
 
@@ -26,7 +27,7 @@ export default function RootLayout({
           <Sidebar />
           <div className="flex w-full flex-col pl-64">
             <Topbar />
-            <main className="flex-1 overflow-auto p-6">{children}</main>
+            <PageTransition>{children}</PageTransition>
           </div>
           <CommandPalette />
           <Toaster position="bottom-right" />
