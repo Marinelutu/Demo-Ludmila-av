@@ -3,40 +3,37 @@
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, Plus, FileText, Grid, List, MoreHorizontal } from 'lucide-react';
+import { Search, Plus, FileText, Grid, List, MoreHorizontal, Upload, ScanLine } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Card, CardFooter } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
+import { GenerateDocumentModal } from '@/components/editor/generate-document-modal';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { OcrSplitView } from '@/components/ocr/ocr-split-view';
 
 export function DocumentsListClient({ initialDocuments }: { initialDocuments: Record<string, unknown>[] }) {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [ocrOpen, setOcrOpen] = useState(false);
 
   const filteredDocs = useMemo(() => {
     if (search.length < 2) return initialDocuments;
     const q = search.toLowerCase();
-    return initialDocuments.filter(d => 
-      d.nume.toLowerCase().includes(q) ||
-      (d.textContent && d.textContent.toLowerCase().includes(q)) ||
-      (d.client && `${d.client.prenume} ${d.client.nume}`.toLowerCase().includes(q))
+    return initialDocuments.filter((d) =>
+      String(d.nume).toLowerCase().includes(q) ||
+      (d.textContent && String(d.textContent).toLowerCase().includes(q)) ||
+      (d.client && `${(d.client as Record<string, string>).prenume} ${(d.client as Record<string, string>).nume}`.toLowerCase().includes(q))
     );
   }, [initialDocuments, search]);
 
@@ -50,11 +47,14 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline">
-            Încarcă fișier
+          <Button variant="outline" className="gap-2" onClick={() => setOcrOpen(true)}>
+            <ScanLine className="h-4 w-4" /> OCR Digitalizare
           </Button>
-          <Button className="bg-indigo-600 hover:bg-indigo-700">
-            <Plus className="mr-2 h-4 w-4" /> Generează Document AI
+          <Button variant="outline" className="gap-2">
+            <Upload className="h-4 w-4" /> Încarcă fișier
+          </Button>
+          <Button className="bg-indigo-600 hover:bg-indigo-700 gap-2" onClick={() => setGenerateOpen(true)}>
+            <Plus className="h-4 w-4" /> Generează Document AI
           </Button>
         </div>
       </div>
@@ -70,17 +70,17 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
           />
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-lg dark:bg-slate-800">
-          <Button 
-            variant={viewMode === 'list' ? 'secondary' : 'ghost'} 
-            size="icon" 
+          <Button
+            variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+            size="icon"
             className={`h-8 w-8 ${viewMode === 'list' ? 'bg-white shadow-sm dark:bg-slate-700' : ''}`}
             onClick={() => setViewMode('list')}
           >
             <List className="h-4 w-4" />
           </Button>
-          <Button 
-            variant={viewMode === 'grid' ? 'secondary' : 'ghost'} 
-            size="icon" 
+          <Button
+            variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+            size="icon"
             className={`h-8 w-8 ${viewMode === 'grid' ? 'bg-white shadow-sm dark:bg-slate-700' : ''}`}
             onClick={() => setViewMode('grid')}
           >
@@ -95,7 +95,7 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
             <EmptyState
               icon={FileText}
               title="Niciun document găsit"
-              description={search ? `Nu am găsit rezultate pentru "${search}".` : "Nu există documente adăugate."}
+              description={search ? `Nu am găsit rezultate pentru "${search}".` : 'Generați primul document cu AI sau încărcați un fișier.'}
             />
           </div>
         </div>
@@ -114,7 +114,7 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
             <TableBody>
               {filteredDocs.map((doc) => (
                 <TableRow
-                  key={doc.id}
+                  key={String(doc.id)}
                   className="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-slate-900/50"
                   onClick={() => router.push(`/documente/${doc.id}`)}
                 >
@@ -123,30 +123,30 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
                       <div className="flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-slate-500 dark:bg-slate-800">
                         <FileText className="h-4 w-4" />
                       </div>
-                      <span className="font-medium text-slate-900 dark:text-white">{doc.nume}</span>
+                      <span className="font-medium text-slate-900 dark:text-white">{String(doc.nume)}</span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-col">
                       <span className="text-sm font-medium text-slate-900 dark:text-slate-300">
-                        {doc.client ? `${doc.client.prenume} ${doc.client.nume}` : '-'}
+                        {doc.client ? `${(doc.client as Record<string, string>).prenume} ${(doc.client as Record<string, string>).nume}` : '-'}
                       </span>
-                      <span className="text-xs text-slate-500 truncate max-w-[200px]" title={doc.case?.denumire}>
-                        {doc.case ? doc.case.numar : '-'}
+                      <span className="text-xs text-slate-500 truncate max-w-[200px]">
+                        {doc.case ? String((doc.case as Record<string, string>).numar) : '-'}
                       </span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline" className="capitalize bg-slate-50 dark:bg-slate-900">
-                      {doc.categorie || doc.tip}
+                      {String(doc.categorie || doc.tip)}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-slate-500">
-                    {format(new Date(doc.createdAt), 'dd MMM yyyy', { locale: ro })}
+                    {format(new Date(String(doc.createdAt)), 'dd MMM yyyy', { locale: ro })}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                      <DropdownMenuTrigger>
                         <Button variant="ghost" size="icon" className="h-8 w-8">
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
@@ -165,42 +165,60 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filteredDocs.map((doc) => (
-            <Card 
-              key={doc.id} 
-              className="cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all group dark:hover:border-indigo-700 overflow-hidden"
+            <Card
+              key={String(doc.id)}
+              className="cursor-pointer hover:border-indigo-300 hover:shadow-md transition-all dark:hover:border-indigo-700 overflow-hidden"
               onClick={() => router.push(`/documente/${doc.id}`)}
             >
               <div className="aspect-[3/4] w-full bg-slate-100 relative dark:bg-slate-800 flex flex-col">
                 <div className="absolute top-2 right-2">
                   <Badge variant="secondary" className="text-[10px] bg-white/80 backdrop-blur-sm dark:bg-slate-950/80">
-                    {doc.tip}
+                    {String(doc.tip)}
                   </Badge>
                 </div>
-                {/* Simulated document thumbnail */}
                 <div className="flex-1 p-4 overflow-hidden">
                   <div className="w-full h-2 bg-slate-200 rounded mb-2 dark:bg-slate-700" />
                   <div className="w-3/4 h-2 bg-slate-200 rounded mb-4 dark:bg-slate-700" />
                   <div className="space-y-1.5 opacity-60">
-                    <div className="w-full h-1.5 bg-slate-200 rounded dark:bg-slate-700" />
-                    <div className="w-full h-1.5 bg-slate-200 rounded dark:bg-slate-700" />
-                    <div className="w-5/6 h-1.5 bg-slate-200 rounded dark:bg-slate-700" />
-                    <div className="w-full h-1.5 bg-slate-200 rounded dark:bg-slate-700" />
+                    {[...Array(6)].map((_, i) => (
+                      <div key={i} className={`h-1.5 bg-slate-200 rounded dark:bg-slate-700 ${i % 3 === 2 ? 'w-5/6' : 'w-full'}`} />
+                    ))}
                   </div>
                 </div>
               </div>
               <CardFooter className="p-3 border-t bg-white dark:bg-slate-950 flex flex-col items-start gap-1">
-                <p className="text-sm font-medium text-slate-900 truncate w-full dark:text-white" title={doc.nume}>
-                  {doc.nume}
+                <p className="text-sm font-medium text-slate-900 truncate w-full dark:text-white">
+                  {String(doc.nume)}
                 </p>
                 <div className="flex items-center justify-between w-full text-xs text-slate-500">
-                  <span className="truncate">{doc.client ? doc.client.prenume : 'Nespecificat'}</span>
-                  <span>{format(new Date(doc.createdAt), 'dd.MM')}</span>
+                  <span className="truncate">
+                    {doc.client ? (doc.client as Record<string, string>).prenume : 'Nespecificat'}
+                  </span>
+                  <span>{format(new Date(String(doc.createdAt)), 'dd.MM')}</span>
                 </div>
               </CardFooter>
             </Card>
           ))}
         </div>
       )}
+
+      {/* Generate Document Modal */}
+      <GenerateDocumentModal open={generateOpen} onOpenChange={setGenerateOpen} />
+
+      {/* OCR Sheet */}
+      <Sheet open={ocrOpen} onOpenChange={setOcrOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-5xl p-0 flex flex-col">
+          <SheetHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+            <SheetTitle className="flex items-center gap-2">
+              <ScanLine className="h-5 w-5 text-indigo-600" />
+              OCR — Digitalizare document
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-hidden p-6">
+            <OcrSplitView />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

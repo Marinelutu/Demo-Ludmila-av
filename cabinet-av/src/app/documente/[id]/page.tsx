@@ -6,9 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft, Download, Save, Printer } from 'lucide-react';
 import Link from 'next/link';
 
-export default async function DocumentPage({ params }: { params: { id: string } }) {
+export default async function DocumentPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const document = await prisma.document.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       client: true,
       case: true,
@@ -57,7 +58,7 @@ export default async function DocumentPage({ params }: { params: { id: string } 
 
       {/* Editor Area */}
       <div className="flex-1 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <DocumentEditor initialContent={document.htmlContent || document.textContent || '<p>Document gol.</p>'} />
+        <DocumentEditor initialContent={document.htmlContent || document.textContent || '<p>Document gol.</p>'} documentId={document.id} />
       </div>
     </div>
   );

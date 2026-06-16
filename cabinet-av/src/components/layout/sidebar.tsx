@@ -122,8 +122,7 @@ export function Sidebar() {
       {/* Footer — User */}
       <div className="px-3 py-4">
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-900">
+          <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-slate-50 dark:hover:bg-slate-900">
               <Avatar className="h-8 w-8">
                 <AvatarFallback className="bg-gradient-to-br from-indigo-400 to-purple-500 text-xs font-semibold text-white">
                   LT
@@ -133,7 +132,6 @@ export function Sidebar() {
                 <p className="text-sm font-medium text-slate-900 dark:text-white">Ludmila Trofim</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">Avocat</p>
               </div>
-            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuItem>

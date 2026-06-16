@@ -2,9 +2,10 @@ import { notFound } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { ClientProfileClient } from './client-profile';
 
-export default async function ClientProfilePage({ params }: { params: { id: string } }) {
+export default async function ClientProfilePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const client = await prisma.client.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
       cases: { orderBy: { createdAt: 'desc' } },
       documents: { orderBy: { createdAt: 'desc' } },

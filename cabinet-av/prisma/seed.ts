@@ -1,6 +1,9 @@
-import { PrismaClient } from '../src/generated/prisma';
+import { PrismaClient } from '../src/generated/prisma/client';
+import { PrismaLibSql } from '@prisma/adapter-libsql';
+import path from 'path';
 
-const prisma = new PrismaClient();
+const adapter = new PrismaLibSql({ url: process.env.DATABASE_URL || `file:${path.join(process.cwd(), 'dev.db')}` });
+const prisma = new PrismaClient({ adapter } as never);
 
 async function main() {
   console.log('🌱 Seeding database...');
