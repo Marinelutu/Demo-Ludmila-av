@@ -1,0 +1,189 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Client {
+  id              String    @id @default(cuid())
+  nume            String
+  prenume         String
+  idnp            String?   @unique
+  telefon         String?
+  email           String?
+  adresa          String?
+  note            String?
+  status          String    @default("activ")
+  aiAuthorized    Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  cases           Case[]
+  documents       Document[]
+  emails          Email[]
+  consultations   Consultation[]
+  timeEntries     TimeEntry[]
+  contracts       Contract[]
+  notes           Note[]
+  conversations   Conversation[]
+}
+
+model Case {
+  id              String    @id @default(cuid())
+  numar           String
+  denumire        String
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id])
+  tip             String
+  instanta        String?
+  judecator       String?
+  stare           String    @default("deschis")
+  articole        String?
+  sumaLitigiu     Float?
+  descriere       String?
+  createdAt       DateTime  @default(now())
+
+  documents       Document[]
+  deadlines       Deadline[]
+  timeEntries     TimeEntry[]
+  emails          Email[]
+}
+
+model Document {
+  id              String    @id @default(cuid())
+  nume            String
+  tip             String
+  categorie       String?
+  clientId        String?
+  client          Client?   @relation(fields: [clientId], references: [id])
+  caseId          String?
+  case            Case?     @relation(fields: [caseId], references: [id])
+  filePath        String?
+  htmlContent     String?
+  textContent     String?
+  containsSensitive Boolean @default(false)
+  ocrStatus       String?
+  ocrFields       String?
+  createdAt       DateTime  @default(now())
+}
+
+model Deadline {
+  id              String    @id @default(cuid())
+  caseId          String
+  case            Case      @relation(fields: [caseId], references: [id])
+  tip             String
+  data            DateTime
+  reminderSent3   Boolean   @default(false)
+  reminderSent1   Boolean   @default(false)
+  status          String    @default("activ")
+  descriere       String?
+}
+
+model Email {
+  id              String    @id @default(cuid())
+  expeditor       String
+  destinatar      String
+  subiect         String
+  continut        String
+  sursa           String
+  data            DateTime
+  clientId        String?
+  client          Client?   @relation(fields: [clientId], references: [id])
+  caseId          String?
+  case            Case?     @relation(fields: [caseId], references: [id])
+  aiSummary       String?
+  aiAction        String?
+  status          String    @default("nou")
+  hasAttachments  Boolean   @default(false)
+  attachments     String?
+}
+
+model Consultation {
+  id              String    @id @default(cuid())
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id])
+  transcript      String
+  structuredData  String?
+  durata          Int?
+  createdAt       DateTime  @default(now())
+}
+
+model TimeEntry {
+  id              String    @id @default(cuid())
+  clientId        String?
+  client          Client?   @relation(fields: [clientId], references: [id])
+  caseId          String?
+  case            Case?     @relation(fields: [caseId], references: [id])
+  categorie       String
+  descriere       String?
+  startTime       DateTime
+  endTime         DateTime?
+  durata          Int?
+  automatic       Boolean   @default(false)
+}
+
+model Contract {
+  id              String    @id @default(cuid())
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id])
+  tip             String
+  numar           String?
+  data            DateTime
+  onorariu        Float?
+  filePath        String?
+  status          String    @default("activ")
+}
+
+model Note {
+  id              String    @id @default(cuid())
+  clientId        String?
+  client          Client?   @relation(fields: [clientId], references: [id])
+  continut        String
+  confidential    Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+}
+
+model Conversation {
+  id              String    @id @default(cuid())
+  clientId        String
+  client          Client    @relation(fields: [clientId], references: [id])
+  platforma       String
+  aiAuthorized    Boolean   @default(false)
+  recentMessages  String
+  lastActiveAt    DateTime  @default(now())
+}
+
+model LegislativeAlert {
+  id              String    @id @default(cuid())
+  titlu           String
+  descriere       String
+  actNormativ     String
+  articol         String?
+  affectedCaseIds String
+  status          String    @default("noua")
+  createdAt       DateTime  @default(now())
+}
+
+model AIConversation {
+  id              String    @id @default(cuid())
+  clientId        String?
+  caseId          String?
+  messages        String
+  sursa           String    @default("dashboard")
+  mod             String    @default("lege")
+  createdAt       DateTime  @default(now())
+}
+
+model Template {
+  id              String    @id @default(cuid())
+  nume            String
+  categorie       String
+  continut        String
+  fields          String
+  activ           Boolean   @default(true)
+}
