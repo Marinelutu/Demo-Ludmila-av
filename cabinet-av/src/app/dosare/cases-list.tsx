@@ -23,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-type CaseData = any;
+type CaseData = Record<string, unknown>;
 
 export function CasesListClient({ initialCases }: { initialCases: CaseData[] }) {
   const router = useRouter();
@@ -168,8 +168,8 @@ export function CasesListClient({ initialCases }: { initialCases: CaseData[] }) 
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={getStatusVariant(c.stare) as any} className={getStatusColor(c.stare)}>
-                      {c.stare.replace('_', ' ')}
+                    <Badge variant={getStatusVariant(c.stare as string) as "default" | "secondary" | "destructive" | "outline"} className={getStatusColor(c.stare as string)}>
+                      {String(c.stare).replace('_', ' ')}
                     </Badge>
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>

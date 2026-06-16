@@ -1,12 +1,13 @@
 'use client';
 
-import { Settings, User, Shield, Bell, Zap, Database, Key } from 'lucide-react';
+import { Settings, User, Shield, Bell, Zap, Key } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
 
 export default function SetariPage() {
   return (

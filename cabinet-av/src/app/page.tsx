@@ -1,7 +1,7 @@
 import { getMottoZilnic } from '@/data/motto';
 import { prisma } from '@/lib/prisma';
 import { StatCard } from '@/components/shared/stat-card';
-import { FolderOpen, Users, Clock, AlertTriangle, ChevronRight, Mail, Calendar } from 'lucide-react';
+import { FolderOpen, Users, Clock, AlertTriangle, Mail, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -66,7 +66,7 @@ export default async function DashboardPage() {
       {/* Motto */}
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-6 py-4 dark:border-indigo-900/30 dark:bg-indigo-950/20">
         <p className="text-sm font-medium italic text-indigo-800 dark:text-indigo-300">
-          "{motto.text}"
+          &quot;{motto.text}&quot;
         </p>
         <p className="mt-1 text-xs text-indigo-600 dark:text-indigo-400">— {motto.autor}</p>
       </div>

@@ -25,7 +25,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Search, Plus, MoreHorizontal, FileText, ArrowUpDown } from 'lucide-react';
+import { Search, Plus, MoreHorizontal,  ArrowUpDown } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';

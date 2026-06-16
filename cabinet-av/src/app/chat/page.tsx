@@ -113,7 +113,7 @@ export default function ChatPage() {
   );
 }
 
-function PlusIcon(props: any) {
+function PlusIcon(props: React.ComponentProps<"svg">) {
   return (
     <svg
       {...props}

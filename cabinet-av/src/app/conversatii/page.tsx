@@ -1,8 +1,7 @@
 'use client';
 
-import { MessageCircle, Phone, Search } from 'lucide-react';
+import { MessageCircle, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { EmptyState } from '@/components/shared/empty-state';
 
 export default function ConversatiiPage() {
   return (

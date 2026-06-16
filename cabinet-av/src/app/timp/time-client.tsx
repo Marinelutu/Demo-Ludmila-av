@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+
 import { Play, Square, Filter, Download, Plus, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +10,8 @@ import { useAppStore } from '@/store/app-store';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 
-export function TimeClient({ initialEntries, clients, cases }: { initialEntries: any[], clients: any[], cases: any[] }) {
+export function TimeClient({ initialEntries }: { initialEntries: Record<string, unknown>[], clients?: unknown[], cases?: unknown[] }) {
   const { activeTimer, startTimer, stopTimer } = useAppStore();
-  const [filter, setFilter] = useState('');
 
   const formatDuration = (seconds: number) => {
     if (!seconds) return '00:00:00';
@@ -90,7 +89,7 @@ export function TimeClient({ initialEntries, clients, cases }: { initialEntries:
             </TableRow>
           </TableHeader>
           <TableBody>
-            {initialEntries.map((entry) => (
+            {initialEntries.map((entry: Record<string, unknown>) => (
               <TableRow key={entry.id}>
                 <TableCell>
                   <div className="font-medium">{format(new Date(entry.startTime), 'dd MMM yyyy', { locale: ro })}</div>

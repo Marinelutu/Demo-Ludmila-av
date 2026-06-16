@@ -21,11 +21,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
+import { Card, CardFooter } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 
-export function DocumentsListClient({ initialDocuments }: { initialDocuments: any[] }) {
+export function DocumentsListClient({ initialDocuments }: { initialDocuments: Record<string, unknown>[] }) {
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');

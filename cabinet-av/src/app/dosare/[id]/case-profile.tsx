@@ -3,13 +3,11 @@
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Clock, Edit2, FileText, Folder, Scale, Calendar } from 'lucide-react';
+import { Clock, Edit2, FileText, Scale, Calendar, Plus, AlertTriangle } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-
-export function CaseProfileClient({ caseData, alerts }: { caseData: any, alerts: any[] }) {
+export function CaseProfileClient({ caseData, alerts }: { caseData: Record<string, unknown>, alerts: Record<string, unknown>[] }) {
   const now = new Date();
 
   const getStatusVariant = (stare: string) => {
@@ -46,7 +44,7 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: any, alerts:
             <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
               {caseData.denumire}
             </h1>
-            <Badge variant={getStatusVariant(caseData.stare) as any} className={getStatusColor(caseData.stare)}>
+            <Badge variant={getStatusVariant(caseData.stare as string) as "default" | "secondary" | "destructive" | "outline"} className={getStatusColor(caseData.stare as string)}>
               {caseData.stare.replace('_', ' ')}
             </Badge>
           </div>
@@ -139,7 +137,7 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: any, alerts:
                 <p className="text-sm text-slate-500 py-4 text-center">Nu există documente în acest dosar.</p>
               ) : (
                 <div className="space-y-3">
-                  {caseData.documents.slice(0, 5).map((doc: any) => (
+                  {Array.isArray(caseData.documents) && caseData.documents.slice(0, 5).map((doc: Record<string, unknown>) => (
                     <div key={doc.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer" onClick={() => {/* Navigation to doc */}}>
                       <div className="mt-1 flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-slate-500 dark:bg-slate-800">
                         <FileText className="h-4 w-4" />
@@ -190,7 +188,7 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: any, alerts:
                 <p className="text-sm text-slate-500">Niciun termen adăugat.</p>
               ) : (
                 <div className="space-y-4">
-                  {caseData.deadlines.map((deadline: any) => {
+                  {Array.isArray(caseData.deadlines) && caseData.deadlines.map((deadline: Record<string, unknown>) => {
                     const daysLeft = differenceInDays(new Date(deadline.data), now);
                     const isPast = daysLeft < 0;
                     const isUrgent = daysLeft >= 0 && daysLeft <= 5;

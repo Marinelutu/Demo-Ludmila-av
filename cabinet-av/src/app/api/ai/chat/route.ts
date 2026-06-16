@@ -24,7 +24,7 @@ Context disponibil:
 ${context || 'Niciun context furnizat.'}`;
 
     // Convert standard chat messages to Anthropic format
-    const anthropicMessages = messages.map((m: any) => ({
+    const anthropicMessages = messages.map((m: { role: string; content: string }) => ({
       role: m.role === 'user' ? 'user' : 'assistant',
       content: m.content,
     }));

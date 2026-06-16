@@ -4,7 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
-import { Bold, Italic, Strikethrough, List, ListOrdered, Undo, Redo, AlignLeft, AlignCenter, AlignRight, AlignJustify } from 'lucide-react';
+import { Bold, Italic, Strikethrough, List, ListOrdered, Undo, Redo } from 'lucide-react';
 import { Toggle } from '@/components/ui/toggle';
 import { Separator } from '@/components/ui/separator';
 
@@ -77,6 +77,7 @@ export function DocumentEditor({ initialContent }: { initialContent: string }) {
         <Separator orientation="vertical" className="mx-1 h-6" />
 
         <button
+          title="Undo"
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().undo()}
           className="p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800 rounded-md"
@@ -84,6 +85,7 @@ export function DocumentEditor({ initialContent }: { initialContent: string }) {
           <Undo className="h-4 w-4" />
         </button>
         <button
+          title="Redo"
           onClick={() => editor.chain().focus().redo().run()}
           disabled={!editor.can().redo()}
           className="p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800 rounded-md"

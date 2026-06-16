@@ -10,8 +10,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
-export function EmailClient({ initialEmails }: { initialEmails: any[] }) {
-  const [selectedEmail, setSelectedEmail] = useState<any | null>(initialEmails[0] || null);
+export function EmailClient({ initialEmails }: { initialEmails: Record<string, unknown>[] }) {
+  const [selectedEmail, setSelectedEmail] = useState<Record<string, unknown> | null>(initialEmails[0] || null);
 
   return (
     <div className="flex w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">

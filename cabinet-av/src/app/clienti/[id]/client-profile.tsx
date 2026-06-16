@@ -6,12 +6,12 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Edit2, Folder, FileText, Mail, MessageSquare, Clock, Phone, FileSignature, FileKey, Activity, AlertTriangle, MessageCircle, MoreVertical } from 'lucide-react';
+import { Edit2, Folder, Mail, Phone, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-type ClientProps = any; // Typing omitted for brevity in demo, normally use Prisma types
+type ClientProps = Record<string, unknown>; // Typing omitted for brevity in demo, normally use Prisma types
 
 export function ClientProfileClient({ client }: { client: ClientProps }) {
   const router = useRouter();
@@ -127,7 +127,7 @@ export function ClientProfileClient({ client }: { client: ClientProps }) {
 
           <TabsContent value="dosare" className="mt-0">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {client.cases.map((c: any) => (
+              {Array.isArray(client.cases) && client.cases.map((c: Record<string, unknown>) => (
                 <Card key={c.id} className="cursor-pointer transition-shadow hover:shadow-md" onClick={() => router.push(`/dosare/${c.id}`)}>
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
