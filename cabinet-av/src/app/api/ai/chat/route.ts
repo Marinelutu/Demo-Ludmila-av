@@ -7,7 +7,7 @@ const anthropic = new Anthropic({
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, context } = await req.json();
+    const { messages, context, systemPrompt: customSystemPrompt } = await req.json();
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -16,9 +16,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const systemPrompt = `Ești un asistent juridic expert pentru un avocat din Republica Moldova.
+    const systemPrompt = customSystemPrompt || `Ești un asistent juridic expert pentru un avocat din Republica Moldova.
 Răspunde profesional, scurt și la obiect, folosind terminologia juridică din RM.
-Dacă ți se oferă context (documente, detalii dosar), bazează-te strict pe acesta.
 
 Context disponibil:
 ${context || 'Niciun context furnizat.'}`;

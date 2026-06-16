@@ -2,13 +2,30 @@
 
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
-import { LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
+import {
+  FolderOpen, Users, Clock, AlertTriangle, Mail, Calendar,
+  FileText, Scale, CheckCircle, TrendingUp, TrendingDown,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
+
+const ICONS = {
+  folder: FolderOpen,
+  users: Users,
+  clock: Clock,
+  alert: AlertTriangle,
+  mail: Mail,
+  calendar: Calendar,
+  file: FileText,
+  scale: Scale,
+  check: CheckCircle,
+} as const;
+
+type IconName = keyof typeof ICONS;
 
 interface StatCardProps {
   title: string;
   value: string | number;
-  icon: LucideIcon;
+  iconName?: IconName;
   delta?: number;
   deltaLabel?: string;
   progress?: number;
@@ -19,7 +36,7 @@ interface StatCardProps {
 export function StatCard({
   title,
   value,
-  icon: Icon,
+  iconName,
   delta,
   deltaLabel,
   progress,
@@ -27,6 +44,7 @@ export function StatCard({
   variant = 'default',
 }: StatCardProps) {
   const isPositiveDelta = delta !== undefined && delta >= 0;
+  const Icon = iconName ? ICONS[iconName] : null;
 
   return (
     <motion.div
@@ -52,27 +70,29 @@ export function StatCard({
                 {value}
               </p>
             </div>
-            <div
-              className={cn(
-                'flex h-10 w-10 items-center justify-center rounded-xl',
-                variant === 'warning'
-                  ? 'bg-amber-50 dark:bg-amber-950/30'
-                  : variant === 'danger'
-                    ? 'bg-red-50 dark:bg-red-950/30'
-                    : 'bg-indigo-50 dark:bg-indigo-950/30'
-              )}
-            >
-              <Icon
+            {Icon && (
+              <div
                 className={cn(
-                  'h-5 w-5',
+                  'flex h-10 w-10 items-center justify-center rounded-xl',
                   variant === 'warning'
-                    ? 'text-amber-600 dark:text-amber-400'
+                    ? 'bg-amber-50 dark:bg-amber-950/30'
                     : variant === 'danger'
-                      ? 'text-red-600 dark:text-red-400'
-                      : 'text-indigo-600 dark:text-indigo-400'
+                      ? 'bg-red-50 dark:bg-red-950/30'
+                      : 'bg-indigo-50 dark:bg-indigo-950/30'
                 )}
-              />
-            </div>
+              >
+                <Icon
+                  className={cn(
+                    'h-5 w-5',
+                    variant === 'warning'
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : variant === 'danger'
+                        ? 'text-red-600 dark:text-red-400'
+                        : 'text-indigo-600 dark:text-indigo-400'
+                  )}
+                />
+              </div>
+            )}
           </div>
 
           {delta !== undefined && (

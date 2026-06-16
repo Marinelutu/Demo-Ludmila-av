@@ -2,8 +2,9 @@
 
 import { usePathname } from 'next/navigation';
 import { Bell, Bot, Search } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAppStore } from '@/store/app-store';
 
@@ -49,23 +50,19 @@ export function Topbar() {
       {/* Right — Actions */}
       <div className="flex items-center gap-2">
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-[18px] w-[18px] text-slate-600 dark:text-slate-400" />
-              <Badge className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
-                3
-              </Badge>
-            </Button>
+          <TooltipTrigger className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'relative')}>
+            <Bell className="h-[18px] w-[18px] text-slate-600 dark:text-slate-400" />
+            <Badge className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+              3
+            </Badge>
           </TooltipTrigger>
           <TooltipContent>Notificări</TooltipContent>
         </Tooltip>
 
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" className="relative">
-              <Bot className="h-[18px] w-[18px] text-slate-600 dark:text-slate-400" />
-              <span className="absolute bottom-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-950" />
-            </Button>
+          <TooltipTrigger className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'relative')}>
+            <Bot className="h-[18px] w-[18px] text-slate-600 dark:text-slate-400" />
+            <span className="absolute bottom-1.5 right-1.5 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-950" />
           </TooltipTrigger>
           <TooltipContent>Telegram conectat</TooltipContent>
         </Tooltip>

@@ -76,28 +76,28 @@ export default async function DashboardPage() {
         <StatCard
           title="Dosare Active"
           value={activeCasesCount}
-          icon={FolderOpen}
+          iconName="folder"
           delta={2}
           deltaLabel="vs luna trecută"
         />
         <StatCard
           title="Clienți Activi"
           value={activeClientsCount}
-          icon={Users}
+          iconName="users"
           delta={1}
           deltaLabel="vs luna trecută"
         />
         <StatCard
           title="Ore (7 zile)"
           value={`${totalHoursThisWeek}h`}
-          icon={Clock}
+          iconName="clock"
           progress={Math.round(progressHours)}
           progressLabel="din 40h target"
         />
         <StatCard
           title="Termene (7 zile)"
           value={deadlinesNext7Days}
-          icon={AlertTriangle}
+          iconName="alert"
           variant={deadlinesNext7Days > 3 ? 'warning' : 'default'}
         />
       </div>

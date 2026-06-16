@@ -12,6 +12,20 @@ const clientSchema = z.object({
   note: z.string().optional().or(z.literal('')),
 });
 
+export async function GET() {
+  try {
+    const clients = await prisma.client.findMany({
+      where: { status: 'activ' },
+      select: { id: true, nume: true, prenume: true, idnp: true, telefon: true, email: true, adresa: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return NextResponse.json(clients);
+  } catch (error) {
+    console.error('GET clients error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const json = await request.json();

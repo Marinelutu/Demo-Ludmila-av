@@ -128,3 +128,36 @@
     @apply font-sans;
   }
 }
+
+/* Zone de confirmare AI — galben */
+.needs-confirmation {
+  background-color: #fef9c3;
+  border-bottom: 2px solid #eab308;
+  cursor: pointer;
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: background-color 0.15s;
+}
+.needs-confirmation:hover {
+  background-color: #fef08a;
+}
+.confirmed-zone {
+  background-color: #dcfce7;
+  border-bottom: 2px solid #16a34a;
+  border-radius: 2px;
+  padding: 0 2px;
+  transition: all 0.3s;
+}
+
+/* Dark mode */
+.dark .needs-confirmation {
+  background-color: #713f12;
+  border-bottom-color: #ca8a04;
+}
+.dark .needs-confirmation:hover {
+  background-color: #854d0e;
+}
+.dark .confirmed-zone {
+  background-color: #14532d;
+  border-bottom-color: #16a34a;
+}
