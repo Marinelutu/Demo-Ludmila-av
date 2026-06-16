@@ -1,7 +1,8 @@
 import { getMottoZilnic } from '@/data/motto';
 import { prisma } from '@/lib/prisma';
 import { StatCard } from '@/components/shared/stat-card';
-import { FolderOpen, Users, Clock, AlertTriangle, Mail, Calendar } from 'lucide-react';
+import { LegislativeAlertsDrawer } from '@/components/shared/legislative-alerts-drawer';
+import { Mail, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -104,23 +105,7 @@ export default async function DashboardPage() {
 
       {/* Alerte legislative */}
       {activeAlerts.length > 0 && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/30 dark:bg-amber-950/20">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-500" />
-            <div>
-              <h3 className="font-semibold text-amber-900 dark:text-amber-400">
-                Atenție: {activeAlerts.length} modificări legislative necesită atenția dvs.
-              </h3>
-              <div className="mt-2 space-y-2">
-                {activeAlerts.map(alert => (
-                  <div key={alert.id} className="text-sm text-amber-800 dark:text-amber-300">
-                    <span className="font-medium">{alert.actNormativ}</span>: {alert.titlu}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <LegislativeAlertsDrawer alerts={activeAlerts} />
       )}
 
       {/* 2 Columns: Termene & Emailuri */}
