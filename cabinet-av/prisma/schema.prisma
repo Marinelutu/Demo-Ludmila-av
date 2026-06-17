@@ -187,3 +187,12 @@ model Template {
   fields          String
   activ           Boolean   @default(true)
 }
+
+model AppSettings {
+  id              Int       @id @default(1)
+  hourlyRate      Float     @default(800)
+  numeCabinet     String    @default("Cabinet Avocat Ludmila Trofim")
+  codFiscal       String    @default("1012345678901")
+  adresaSediu     String    @default("mun. Chișinău, str. București 1")
+  updatedAt       DateTime  @updatedAt @default(now())
+}
