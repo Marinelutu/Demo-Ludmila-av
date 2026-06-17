@@ -130,16 +130,18 @@
 }
 
 /* Zone de confirmare AI — galben */
-.needs-confirmation {
-  background-color: #fef9c3;
-  border-bottom: 2px solid #eab308;
+.needs-confirmation,
+span[data-reason] {
+  background-color: #fef9c3 !important;
+  border-bottom: 2px solid #eab308 !important;
   cursor: pointer;
   border-radius: 2px;
   padding: 0 2px;
   transition: background-color 0.15s;
 }
-.needs-confirmation:hover {
-  background-color: #fef08a;
+.needs-confirmation:hover,
+span[data-reason]:hover {
+  background-color: #fef08a !important;
 }
 .confirmed-zone {
   background-color: #dcfce7;
@@ -150,12 +152,14 @@
 }
 
 /* Dark mode */
-.dark .needs-confirmation {
-  background-color: #713f12;
-  border-bottom-color: #ca8a04;
+.dark .needs-confirmation,
+.dark span[data-reason] {
+  background-color: #713f12 !important;
+  border-bottom-color: #ca8a04 !important;
 }
-.dark .needs-confirmation:hover {
-  background-color: #854d0e;
+.dark .needs-confirmation:hover,
+.dark span[data-reason]:hover {
+  background-color: #854d0e !important;
 }
 .dark .confirmed-zone {
   background-color: #14532d;

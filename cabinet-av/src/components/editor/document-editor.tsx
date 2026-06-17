@@ -4,6 +4,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Highlight from '@tiptap/extension-highlight';
 import Placeholder from '@tiptap/extension-placeholder';
+import TextAlign from '@tiptap/extension-text-align';
 import { Mark, mergeAttributes } from '@tiptap/core';
 import { Bold, Italic, Strikethrough, List, ListOrdered, Undo, Redo, CheckCircle, X, Edit3 } from 'lucide-react';
 import { Toggle } from '@/components/ui/toggle';
@@ -30,12 +31,15 @@ const NeedsConfirmation = Mark.create({
 
   parseHTML() {
     return [
+      { tag: 'span[data-reason]' },
+      { tag: 'span.needs-confirmation' },
+      { tag: 'span[title]', getAttrs: (el) => ({ reason: (el as HTMLElement).getAttribute('title') }) },
       {
-        tag: 'span',
+        tag: 'span[style]',
         getAttrs: (el) => {
-          const element = el as HTMLElement;
-          if (element.classList.contains('needs-confirmation')) {
-            return { reason: element.getAttribute('data-reason') };
+          const style = (el as HTMLElement).getAttribute('style') || '';
+          if (/background[^;]*#fff/i.test(style) || /background[^;]*yellow/i.test(style)) {
+            return { reason: (el as HTMLElement).getAttribute('title') || 'Necesită verificare' };
           }
           return false;
         },
@@ -82,6 +86,7 @@ export function DocumentEditor({ initialContent, documentId }: DocumentEditorPro
       NeedsConfirmation,
       Highlight.configure({ multicolor: true }),
       Placeholder.configure({ placeholder: 'Începeți redactarea documentului...' }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
     ],
     content: initialContent,
     editorProps: {
@@ -95,7 +100,7 @@ export function DocumentEditor({ initialContent, documentId }: DocumentEditorPro
   // Click delegation for needs-confirmation spans
   const handleEditorClick = useCallback(
     (e: MouseEvent) => {
-      const target = (e.target as HTMLElement).closest('.needs-confirmation') as HTMLElement | null;
+      const target = (e.target as HTMLElement).closest('.needs-confirmation, [data-reason]') as HTMLElement | null;
       if (!target) {
         setPopover((prev) => ({ ...prev, visible: false }));
         return;
