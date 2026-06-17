@@ -4,8 +4,6 @@ import { prisma } from '@/lib/prisma';
 import { sendMessage, sendDocument, getFileUrl } from '@/lib/telegram/send';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
-
 const ASSIST_TOKEN = process.env.TELEGRAM_BOT_ASSIST_TOKEN;
 
 async function reply(chatId: string, text: string) {
@@ -94,6 +92,7 @@ export async function POST(req: NextRequest) {
 
       const activeCase = matchedClient.cases[0];
 
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
       const genResponse = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2048,
@@ -123,6 +122,7 @@ export async function POST(req: NextRequest) {
 
       await reply(chatId, '⏳ Caut răspunsul...');
 
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
       const response = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,

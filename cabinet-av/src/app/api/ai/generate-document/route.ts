@@ -1,8 +1,6 @@
 import { NextRequest } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
-
 const SYSTEM_PROMPT = `Ești un asistent juridic specializat în dreptul Republicii Moldova. Generezi documente juridice profesionale în limba română, conform legislației moldovenești în vigoare.
 
 Reguli stricte:
@@ -21,6 +19,7 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'API key lipsă' }), { status: 500 });
   }
 
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const { tip, clientDetails, caseDetails, descriere } = await req.json();
 
   const userPrompt = `Tip document: ${tip || 'Cerere'}

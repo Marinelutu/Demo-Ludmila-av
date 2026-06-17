@@ -3,8 +3,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
 import { sendMessage } from '@/lib/telegram/send';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
-
 interface Message {
   role: 'client' | 'avocat';
   text: string;
@@ -46,6 +44,7 @@ export async function POST(req: NextRequest) {
     const messages: Message[] = [...existingMessages, newClientMsg];
 
     if (conversation.aiAuthorized && process.env.ANTHROPIC_API_KEY) {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const { client } = conversation;
       const activeCase = client.cases[0];
 

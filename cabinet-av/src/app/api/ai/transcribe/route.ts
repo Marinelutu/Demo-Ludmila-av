@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' });
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
-
 const STRUCTURE_PROMPT = `Extrage în JSON din transcriptul de mai jos:
 {
   "nume_client": "string sau null",
@@ -22,6 +19,9 @@ export async function POST(req: NextRequest) {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: 'OpenAI API key lipsă' }, { status: 500 });
   }
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
 
   try {
     const formData = await req.formData();

@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY || '',
-});
-
 export async function POST(req: NextRequest) {
   try {
     const { emailId } = await req.json();
@@ -27,6 +23,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 500 });
     }
 
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const clientList = clients.map(c => `- ID: ${c.id} | Nume: ${c.prenume} ${c.nume}${c.email ? ` | Email: ${c.email}` : ''}`).join('\n');
 
     const systemPrompt = `Ești un asistent juridic inteligent pentru un cabinet de avocatură din Republica Moldova.

@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import sharp from 'sharp';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
 const OCR_PROMPT = `Analizează acest document juridic și extrage:
 
 1. textul_complet: tot textul vizibil în document
@@ -50,6 +48,7 @@ export async function POST(req: NextRequest) {
       .toBuffer();
 
     const base64 = compressedBuffer.toString('base64');
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const result = await model.generateContent([
