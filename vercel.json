@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd cabinet-av && npm ci && npm run build",
+  "outputDirectory": "cabinet-av/.next",
+  "installCommand": "cd cabinet-av && npm ci",
+  "framework": "nextjs"
+}
