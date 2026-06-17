@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
 import { sendMessage, sendDocument, getFileUrl } from '@/lib/telegram/send';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { detectTemplateId, generateDocument } from '@/lib/document-templates';
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
 
@@ -12,35 +13,55 @@ async function reply(chatId: string, text: string) {
   await sendMessage(chatId, text, ASSIST_TOKEN);
 }
 
-async function generateHtmlToDocx(html: string): Promise<Buffer> {
-  const lines = html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<\/h[1-6]>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .split('\n')
-    .map(l => l.trim())
-    .filter(Boolean);
+async function generateDocx(plainText: string): Promise<Buffer> {
+  const lines = plainText.split('\n').map(l => l.trimEnd());
+  const alreadyHasHeader = plainText.trimStart().startsWith('Cabinet Juridic');
 
-  const paragraphs = lines.map(line =>
+  const children: Paragraph[] = alreadyHasHeader ? [] : [
     new Paragraph({
-      children: [new TextRun({ text: line, size: 24 })],
-      spacing: { after: 120 },
-    })
-  );
+      text: 'Cabinet Juridic Av. Ludmila Trofim',
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 80 },
+    }),
+    new Paragraph({ text: '', spacing: { after: 160 } }),
+  ];
 
-  const doc = new Document({
-    sections: [{
-      children: [
-        new Paragraph({
-          text: 'Document generat de Cabinet Juridic Ludmila Trofim',
-          heading: HeadingLevel.HEADING_1,
-        }),
-        ...paragraphs,
-      ],
-    }],
-  });
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      children.push(new Paragraph({ text: '', spacing: { after: 80 } }));
+      continue;
+    }
+    // Lines starting with ## → sub-heading
+    if (trimmed.startsWith('## ')) {
+      children.push(new Paragraph({
+        text: trimmed.slice(3),
+        heading: HeadingLevel.HEADING_2,
+        spacing: { before: 240, after: 120 },
+      }));
+    // Lines starting with # → heading
+    } else if (trimmed.startsWith('# ')) {
+      children.push(new Paragraph({
+        text: trimmed.slice(2),
+        heading: HeadingLevel.HEADING_1,
+        spacing: { before: 360, after: 120 },
+      }));
+    // ALL-CAPS lines (section titles like "I. DATELE PĂRȚILOR")
+    } else if (/^[IVX]+\.\s+[A-ZĂÂÎȘȚ\s]+$/.test(trimmed) || /^[A-ZĂÂÎȘȚ\s]{6,}$/.test(trimmed)) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: trimmed, bold: true, size: 24 })],
+        spacing: { before: 240, after: 120 },
+      }));
+    } else {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: trimmed, size: 24 })],
+        spacing: { after: 100 },
+        indent: trimmed.startsWith('—') || trimmed.startsWith('-') ? { left: 360 } : undefined,
+      }));
+    }
+  }
 
+  const doc = new Document({ sections: [{ children }] });
   return Packer.toBuffer(doc);
 }
 
@@ -72,7 +93,20 @@ export async function POST(req: NextRequest) {
       await reply(chatId, '⏳ Generez documentul...');
 
       const clients = await prisma.client.findMany({
-        include: { cases: { take: 1, orderBy: { createdAt: 'desc' } } },
+        include: {
+          cases: {
+            orderBy: { createdAt: 'desc' },
+            select: { numar: true, denumire: true, tip: true, instanta: true, judecator: true, stare: true, articole: true, sumaLitigiu: true, descriere: true },
+          },
+          documents: {
+            select: { nume: true, tip: true, textContent: true, htmlContent: true, ocrFields: true },
+          },
+          consultations: {
+            orderBy: { createdAt: 'desc' },
+            select: { transcript: true, structuredData: true },
+          },
+          notes: { select: { continut: true } },
+        },
       });
 
       let matchedClient = null;
@@ -92,24 +126,93 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      const activeCase = matchedClient.cases[0];
+      // Build full context string for the extractor
+      const stripHtml = (html: string) =>
+        html
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<span[^>]*class="needs-confirmation"[^>]*>([\s\S]*?)<\/span>/gi, '[DE VERIFICAT: $1]')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
 
-      const genResponse = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 2048,
-        temperature: 0.2,
-        system: `Ești un asistent juridic specializat în dreptul Republicii Moldova. Generezi documente juridice profesionale în HTML curat. Marchezi cu <span class="needs-confirmation">TEXT</span> valorile incerte.`,
-        messages: [{
-          role: 'user',
-          content: `Tip document: ${docTip}\nClient: ${matchedClient.prenume} ${matchedClient.nume}, IDNP ${matchedClient.idnp || 'necunoscut'}\n${activeCase ? `Dosar: ${activeCase.numar} — ${activeCase.denumire}` : ''}\n\nGenerează documentul complet.`,
-        }],
-      });
+      const clientContext = [
+        `=== DATE CLIENT ===`,
+        `Nume complet: ${matchedClient.prenume} ${matchedClient.nume}`,
+        matchedClient.idnp && `IDNP: ${matchedClient.idnp}`,
+        matchedClient.telefon && `Telefon: ${matchedClient.telefon}`,
+        matchedClient.email && `Email: ${matchedClient.email}`,
+        matchedClient.adresa && `Adresă: ${matchedClient.adresa}`,
+        matchedClient.note && `Note client: ${matchedClient.note}`,
 
-      const htmlContent = genResponse.content[0].type === 'text' ? genResponse.content[0].text : '';
-      const docxBuffer = await generateHtmlToDocx(htmlContent);
+        matchedClient.cases.length > 0 && `\n=== DOSARE ===`,
+        ...matchedClient.cases.map(c =>
+          `Dosar ${c.numar}: ${c.denumire} (${c.tip}, ${c.stare})` +
+          (c.instanta ? `, instanța: ${c.instanta}` : '') +
+          (c.judecator ? `, judecător: ${c.judecator}` : '') +
+          (c.articole ? `, articole: ${c.articole}` : '') +
+          (c.sumaLitigiu ? `, sumă litigiu: ${c.sumaLitigiu} lei` : '') +
+          (c.descriere ? `\n  ${c.descriere}` : '')
+        ),
+
+        matchedClient.documents.length > 0 && `\n=== DOCUMENTE DIN DOSAR ===`,
+        ...matchedClient.documents.map(d => {
+          const parts: string[] = [];
+          if (d.textContent?.trim()) parts.push(d.textContent.trim());
+          if (d.htmlContent?.trim()) {
+            const stripped = stripHtml(d.htmlContent);
+            if (stripped && stripped !== d.textContent?.trim()) parts.push(stripped);
+          }
+          if (d.ocrFields) {
+            try {
+              const fields = JSON.parse(d.ocrFields) as Array<{ nume_camp: string; valoare: string }>;
+              parts.push('OCR: ' + fields.map(f => `${f.nume_camp}=${f.valoare}`).join(', '));
+            } catch { /* ignore */ }
+          }
+          return `[${d.tip}] ${d.nume}:\n  ${parts.join(' | ').slice(0, 1200)}`;
+        }),
+
+        matchedClient.consultations.length > 0 && `\n=== CONSULTAȚII ===`,
+        ...matchedClient.consultations.map(c => {
+          let structured = '';
+          if (c.structuredData) {
+            try { structured = '\n  Date structurate: ' + JSON.stringify(JSON.parse(c.structuredData)); } catch { /* ignore */ }
+          }
+          return `Consultație:\n  ${(c.transcript || '').slice(0, 800)}${structured}`;
+        }),
+
+        matchedClient.notes.length > 0 && `\n=== NOTE INTERNE ===`,
+        ...matchedClient.notes.map(n => `- ${n.continut}`),
+      ].filter(Boolean).join('\n');
+
+      // Detect template or fall back to free-form
+      const templateId = detectTemplateId(docTip);
+
+      let plainText: string;
+      let missingNote = '';
+
+      if (templateId) {
+        const result = await generateDocument(templateId, clientContext, anthropic);
+        plainText = result.text;
+        if (result.missingFields.length > 0) {
+          missingNote = `\n\n⚠️ Câmpuri lipsă în baza de date: ${result.missingFields.join(', ')}`;
+        }
+      } else {
+        // Fallback: free-form for unknown document types
+        const genResponse = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 3000,
+          temperature: 0,
+          system: `Ești asistentul juridic al Av. Ludmila Trofim. Generezi TEXT SIMPLU (fără HTML/CSS). Structura fixă: I. DATELE PĂRȚILOR, II. OBIECTUL, III. SITUAȚIA DE FAPT, IV. TEMEI JURIDIC, V. SOLICITĂRI, VI. DOCUMENTE ANEXATE, VII. SEMNĂTURI. Folosești datele furnizate. [DE COMPLETAT] doar pentru ce lipsește.`,
+          messages: [{ role: 'user', content: `Tip: ${docTip}\n\n${clientContext}` }],
+        });
+        plainText = genResponse.content[0].type === 'text' ? genResponse.content[0].text : '';
+      }
+
+      const docxBuffer = await generateDocx(plainText);
       const filename = `${docTip.replace(/\s+/g, '_')}_${matchedClient.nume}.docx`;
+      const caption = `📄 ${docTip} — ${matchedClient.prenume} ${matchedClient.nume}${missingNote}`;
 
-      await sendDocument(chatId, docxBuffer, filename, `📄 ${docTip} — ${matchedClient.prenume} ${matchedClient.nume}`, ASSIST_TOKEN);
+      await sendDocument(chatId, docxBuffer, filename, caption, ASSIST_TOKEN);
       return NextResponse.json({ ok: true });
     }
 
