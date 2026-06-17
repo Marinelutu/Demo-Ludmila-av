@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { getMottoZilnic } from '@/data/motto';
 import { prisma } from '@/lib/prisma';
 import { StatCard } from '@/components/shared/stat-card';
