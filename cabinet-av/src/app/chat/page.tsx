@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import ReactMarkdown from 'react-markdown';
 
 type Mode = 'lege' | 'strategie';
 type Role = 'user' | 'assistant';
@@ -316,8 +317,8 @@ export default function ChatPage() {
                       <Skeleton className="h-4 w-1/2" />
                     </div>
                   ) : (
-                    <div className="prose prose-slate dark:prose-invert text-sm max-w-none whitespace-pre-wrap">
-                      {msg.content}
+                    <div className="prose prose-slate dark:prose-invert text-sm max-w-none prose-p:my-1 prose-headings:mt-3 prose-headings:mb-1 prose-li:my-0">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
                   )}
                 </div>

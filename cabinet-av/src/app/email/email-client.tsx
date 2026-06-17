@@ -76,10 +76,14 @@ export function EmailClient({ initialEmails }: { initialEmails: EmailRecord[] })
                       <Sparkles className="mr-1 h-3 w-3" /> AI
                     </Badge>
                   )}
+                  {email.status === 'nou' && (
+                    <Badge className="text-[10px] bg-blue-600 text-white">Nou</Badge>
+                  )}
+                  {email.status === 'procesat' && (
+                    <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300">Procesat</Badge>
+                  )}
                   {email.status === 'urgent' && (
-                    <Badge variant="destructive" className="text-[10px]">
-                      Urgent
-                    </Badge>
+                    <Badge variant="destructive" className="text-[10px]">Urgent</Badge>
                   )}
                 </div>
               </button>

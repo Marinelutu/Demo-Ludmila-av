@@ -260,6 +260,24 @@ export async function POST(req: NextRequest) {
     // Unknown command
     if (text.startsWith('/')) {
       await reply(chatId, '❓ Comandă necunoscută. Scrieți /start pentru a vedea comenzile disponibile.');
+      return NextResponse.json({ ok: true });
+    }
+
+    // Plain text (orice mesaj liber, inclusiv link-uri) → răspuns AI juridic
+    if (text) {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        temperature: 0.2,
+        system: `Ești asistentul juridic al cabinetului Av. Ludmila Trofim din Republica Moldova.
+Răspunzi scurt, profesional, în română. Dacă primești un link, explică ce ar putea conține și cum poate fi util juridic.
+Dacă primești o întrebare, răspunzi cu informații juridice din legislația RM.
+Nu folosești markdown complex — doar text simplu cu emojis dacă e necesar.`,
+        messages: [{ role: 'user', content: text }],
+      });
+      const answer = response.content[0].type === 'text' ? response.content[0].text : 'Nu am putut genera un răspuns.';
+      await reply(chatId, `💬 ${answer}\n\n<i>Tip: /intreaba [întrebare] pentru consiliere detaliată • /document [client] [tip] pentru a genera un document</i>`);
     }
 
     return NextResponse.json({ ok: true });
