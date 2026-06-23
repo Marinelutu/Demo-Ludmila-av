@@ -53,3 +53,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
+
+const clientUpdateSchema = clientSchema.partial().extend({
+  id: z.string().min(1),
+  status: z.enum(['activ', 'arhivat']).optional(),
+});
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const json = await request.json();
+    const { id, ...rest } = clientUpdateSchema.parse(json);
+
+    const client = await prisma.client.update({
+      where: { id },
+      data: {
+        ...(rest.nume !== undefined && { nume: rest.nume }),
+        ...(rest.prenume !== undefined && { prenume: rest.prenume }),
+        ...(rest.idnp !== undefined && { idnp: rest.idnp || null }),
+        ...(rest.telefon !== undefined && { telefon: rest.telefon || null }),
+        ...(rest.email !== undefined && { email: rest.email || null }),
+        ...(rest.adresa !== undefined && { adresa: rest.adresa || null }),
+        ...(rest.note !== undefined && { note: rest.note || null }),
+        ...(rest.status !== undefined && { status: rest.status }),
+      },
+    });
+
+    return NextResponse.json(client);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json({ error: error.issues }, { status: 400 });
+    }
+    console.error('Update client error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}

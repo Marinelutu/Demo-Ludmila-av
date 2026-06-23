@@ -1,0 +1,2159 @@
+From 4a919ec770ced8007f07d454a5b1c0c7fc408148 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 23 Jun 2026 10:23:43 +0000
+Subject: [PATCH 1/2] Fix client UX: alerts, structured address, OCR, editing &
+ notes
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Alerte legislative: butonul "Marchează citită" funcționează acum
+  (persistare prin PATCH /api/alerts + ascundere optimistă a alertei).
+- Adăugare client: adresa este împărțită în câmpuri structurate
+  (stradă, număr, oraș, cod poștal) în loc de un singur rând.
+- OCR: suport drag & drop, previzualizare PDF (iframe, nu imagine ruptă)
+  și stare clară de eroare/reîncercare în loc de skeleton blocat.
+- Profil client: butoanele "Editează" și "Dosar Nou" deschid acum
+  dialoguri funcționale (PATCH /api/clients, POST /api/cases).
+- Notițe: notițele confidențiale sunt ascunse până la apăsarea
+  butonului "Afișează"; adăugare notiță inline cu comutator confidențial.
+- Contracte & Documente: adăugare contract inline (POST /api/contracts)
+  și buton "Document nou" în tab-ul Documente.
+- Consultații: butonul "Adaugă consultație la profil" salvează acum
+  (POST /api/consultations).
+- Navigare: tab-ul activ din profilul clientului este sincronizat cu URL-ul,
+  astfel încât butonul "înapoi" din browser revine pe tab-ul corect.
+- Documente: generarea produce HTML semantic structurat (titluri, secțiuni,
+  liste, tabele) + stiluri pentru documente juridice, eliminând aspectul
+  de "text aruncat pe pagină".
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_019xMxMAjxjr2cfCAUKZ6BLD
+---
+ .../src/app/api/ai/generate-document/route.ts |  61 +--
+ cabinet-av/src/app/api/ai/ocr/route.ts        |  26 +-
+ cabinet-av/src/app/api/alerts/route.ts        |  23 +
+ cabinet-av/src/app/api/cases/route.ts         |  39 ++
+ cabinet-av/src/app/api/clients/route.ts       |  34 ++
+ cabinet-av/src/app/api/consultations/route.ts |  34 ++
+ cabinet-av/src/app/api/contracts/route.ts     |  37 ++
+ cabinet-av/src/app/api/notes/route.ts         |  32 ++
+ .../src/app/clienti/[id]/client-profile.tsx   | 454 +++++++++++++++++-
+ cabinet-av/src/app/clienti/client-list.tsx    |  56 ++-
+ cabinet-av/src/app/globals.css                |  88 ++++
+ .../editor/generate-document-modal.tsx        |   2 +-
+ .../src/components/ocr/ocr-split-view.tsx     | 142 ++++--
+ .../shared/legislative-alerts-drawer.tsx      |  48 +-
+ 14 files changed, 982 insertions(+), 94 deletions(-)
+ create mode 100644 cabinet-av/src/app/api/alerts/route.ts
+ create mode 100644 cabinet-av/src/app/api/consultations/route.ts
+ create mode 100644 cabinet-av/src/app/api/contracts/route.ts
+ create mode 100644 cabinet-av/src/app/api/notes/route.ts
+
+diff --git a/cabinet-av/src/app/api/ai/generate-document/route.ts b/cabinet-av/src/app/api/ai/generate-document/route.ts
+index 0471c92..1ca0dd2 100644
+--- a/cabinet-av/src/app/api/ai/generate-document/route.ts
++++ b/cabinet-av/src/app/api/ai/generate-document/route.ts
+@@ -4,48 +4,39 @@ import Anthropic from '@anthropic-ai/sdk';
+ const SYSTEM_PROMPT = `Ești un asistent juridic specializat în dreptul Republicii Moldova. Generezi documente juridice profesionale în limba română, conform legislației moldovenești în vigoare.
+ 
+ REGULI DE FORMATARE — OBLIGATORII:
+-- Output: EXCLUSIV HTML cu INLINE STYLES pe fiecare element. NICIO clasă CSS, NICIO referință externă.
+-- Fontul documentului: font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.6; color: #000;
+-- Containerul principal: <div style="max-width:800px; margin:0 auto; padding:40px; font-family:'Times New Roman',serif; font-size:12pt; line-height:1.6; color:#000; background:#fff;">
++- Output: EXCLUSIV HTML SEMANTIC, curat. Folosește tag-uri structurale reale (h1, h2, h3, p, ol, ul, li, table, strong, em). NU folosi stiluri inline (style="..."), NU folosi clase CSS, NU folosi <div> de layout. Formatarea vizuală (font Times New Roman, A4, centrări, spațieri) este aplicată automat de aplicație pe baza tag-urilor semantice.
+ - NU pune niciodată \`\`\`html sau \`\`\` în output. Doar HTML pur.
+-- NU pune tag-uri <html>, <head>, <body>.
++- NU pune tag-uri <html>, <head>, <body>, <style>.
++- Documentul TREBUIE să aibă o structură vizibilă și ierarhică: titlu principal, secțiuni, subpuncte, liste numerotate. Niciodată "text aruncat pe pagină".
+ 
+-STRUCTURA OBLIGATORIE A DOCUMENTULUI JURIDIC:
++STRUCTURA OBLIGATORIE A DOCUMENTULUI JURIDIC (folosind tag-uri semantice):
+ 
+-1. ANTETUL INSTANȚEI — centrat:
+-   <p style="text-align:center; font-weight:bold; margin:0;">Denumirea instanței</p>
+-   <p style="text-align:center; margin:0 0 24px 0;">Adresa instanței</p>
++1. ANTETUL INSTANȚEI — primul element, paragraf cu denumirea și adresa instanței:
++   <p><strong>Denumirea instanței</strong><br>Adresa instanței</p>
+ 
+-2. BLOCUL PĂRȚILOR — aliniat stânga, cu indentare:
+-   <p style="margin:0 0 4px 0;"><strong>Reclamant/Apelant:</strong> Numele,</p>
+-   <p style="margin:0 0 4px 120px;">IDNO/IDNP: ...,</p>
+-   (fiecare câmp pe linie separată, indentat cu margin-left: 120px pentru continuări)
++2. BLOCUL PĂRȚILOR — fiecare parte pe paragraf separat, eticheta în bold:
++   <p><strong>Reclamant:</strong> Nume Prenume<br>IDNP: ...<br>Domiciliu: ...</p>
++   <p><strong>Pârât:</strong> Nume Prenume<br>IDNP: ...<br>Domiciliu: ...</p>
+ 
+-3. TITLUL DOCUMENTULUI — centrat, majuscule, bold:
+-   <p style="text-align:center; font-weight:bold; font-size:14pt; margin:32px 0 4px 0;">CERERE DE APEL</p>
+-   <p style="text-align:center; margin:0 0 24px 0;">conform art. ... CPC RM</p>
++3. TITLUL DOCUMENTULUI — cu <h1> (majuscule), subtitlul cu <h2>:
++   <h1>CERERE DE APEL</h1>
++   <h2>conform art. ... CPC RM</h2>
+ 
+-4. CORPUL TEXTULUI — paragraf normal, justify:
+-   <p style="text-align:justify; margin:0 0 12px 0;">...</p>
++4. CORPUL TEXTULUI — paragrafe normale <p>...</p>.
+ 
+-5. SECȚIUNILE NUMEROTATE:
+-   <p style="font-weight:bold; margin:20px 0 8px 0;">I. TITLUL SECȚIUNII</p>
++5. SECȚIUNILE NUMEROTATE — cu <h3>:
++   <h3>I. ÎN FAPT</h3>
++   <h3>II. ÎN DREPT</h3>
+ 
+-6. LISTELE — fiecare punct pe linie cu margin stânga:
+-   <p style="margin:0 0 6px 20px;">1. primul punct;</p>
+-   <p style="margin:0 0 6px 20px;">2. al doilea punct;</p>
++6. LISTELE / PETITUL — liste numerotate reale:
++   <ol><li>primul capăt de cerere;</li><li>al doilea capăt de cerere;</li></ol>
++   Pentru enumerări fără ordine, folosește <ul><li>...</li></ul>.
+ 
+-7. BLOCUL DE SEMNĂTURĂ — jos, cu spațiere:
+-   <table style="width:100%; margin-top:40px; border-collapse:collapse;">
+-     <tr>
+-       <td style="width:50%; vertical-align:top; padding:0;">
+-         <p style="margin:0;">Data: _________________</p>
+-       </td>
+-       <td style="width:50%; text-align:right; vertical-align:top; padding:0;">
+-         <p style="margin:0;">Semnătura: ___________________</p>
+-       </td>
+-     </tr>
+-   </table>
++7. TABELE — când datele se pretează la tabel (ex: calcul sume, anexe), folosește <table> real cu <thead>/<tbody>, <tr>, <th>, <td>.
++
++8. BLOCUL DE SEMNĂTURĂ — la final, paragraf cu data și semnătura:
++   <p>Data: _________________</p>
++   <p>Semnătura: _________________</p>
+ 
+ DOUĂ TIPURI DE CÂMPURI NECOMPLETATE — distincție strictă:
+ 
+@@ -69,9 +60,9 @@ REGULA DE AUR: Dacă AI-ul SCRIE o valoare concretă (nu lasă blank), acea valo
+ REGULI JURIDICE:
+ 1. Terminologie juridică corectă moldovenească
+ 2. Citezi articolele exacte din codurile relevante — și le marchezi cu galben dacă nu ești sigur
+-3. Structura formală respectată strict
++3. Structura formală respectată strict, cu titluri, secțiuni și liste numerotate clar delimitate
+ 
+-Output: NUMAI HTML cu inline styles. Niciun comentariu, nicio explicație, niciun bloc de cod markdown.`;
++Output: NUMAI HTML semantic (h1, h2, h3, p, ol, ul, li, table, strong, em + span.needs-confirmation). Fără stiluri inline, fără comentarii, fără explicații, fără bloc de cod markdown.`;
+ 
+ export async function POST(req: NextRequest) {
+   if (!process.env.ANTHROPIC_API_KEY) {
+diff --git a/cabinet-av/src/app/api/ai/ocr/route.ts b/cabinet-av/src/app/api/ai/ocr/route.ts
+index 354b494..a6269bc 100644
+--- a/cabinet-av/src/app/api/ai/ocr/route.ts
++++ b/cabinet-av/src/app/api/ai/ocr/route.ts
+@@ -41,19 +41,31 @@ export async function POST(req: NextRequest) {
+     const arrayBuffer = await file.arrayBuffer();
+     const inputBuffer = Buffer.from(arrayBuffer);
+ 
+-    // Sharp compression: resize la max 2000px, JPEG quality 85
+-    const compressedBuffer = await sharp(inputBuffer)
+-      .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+-      .jpeg({ quality: 85 })
+-      .toBuffer();
++    const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
++
++    let base64: string;
++    let mimeType: string;
++
++    if (isPdf) {
++      // Gemini acceptă PDF direct — nu îl trecem prin sharp (care e doar pentru imagini)
++      base64 = inputBuffer.toString('base64');
++      mimeType = 'application/pdf';
++    } else {
++      // Imagine: compresie cu sharp (resize max 2000px, JPEG quality 85)
++      const compressedBuffer = await sharp(inputBuffer)
++        .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
++        .jpeg({ quality: 85 })
++        .toBuffer();
++      base64 = compressedBuffer.toString('base64');
++      mimeType = 'image/jpeg';
++    }
+ 
+-    const base64 = compressedBuffer.toString('base64');
+     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+ 
+     const result = await model.generateContent([
+       OCR_PROMPT,
+-      { inlineData: { data: base64, mimeType: 'image/jpeg' } },
++      { inlineData: { data: base64, mimeType } },
+     ]);
+ 
+     const text = result.response.text().trim();
+diff --git a/cabinet-av/src/app/api/alerts/route.ts b/cabinet-av/src/app/api/alerts/route.ts
+new file mode 100644
+index 0000000..ff20b03
+--- /dev/null
++++ b/cabinet-av/src/app/api/alerts/route.ts
+@@ -0,0 +1,23 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++
++// PATCH /api/alerts — marchează o alertă legislativă ca citită
++export async function PATCH(request: NextRequest) {
++  try {
++    const { id, status } = await request.json();
++
++    if (!id) {
++      return NextResponse.json({ error: 'ID alertă lipsă' }, { status: 400 });
++    }
++
++    const alert = await prisma.legislativeAlert.update({
++      where: { id },
++      data: { status: status || 'citita' },
++    });
++
++    return NextResponse.json(alert);
++  } catch (error) {
++    console.error('Update alert error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
+diff --git a/cabinet-av/src/app/api/cases/route.ts b/cabinet-av/src/app/api/cases/route.ts
+index fd0b5b4..aa10390 100644
+--- a/cabinet-av/src/app/api/cases/route.ts
++++ b/cabinet-av/src/app/api/cases/route.ts
+@@ -1,5 +1,6 @@
+ import { NextRequest, NextResponse } from 'next/server';
+ import { prisma } from '@/lib/prisma';
++import * as z from 'zod';
+ 
+ export async function GET(request: NextRequest) {
+   try {
+@@ -21,3 +22,41 @@ export async function GET(request: NextRequest) {
+     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+   }
+ }
++
++const caseSchema = z.object({
++  clientId: z.string().min(1, 'Client lipsă'),
++  numar: z.string().min(1, 'Numărul dosarului este obligatoriu'),
++  denumire: z.string().min(2, 'Denumirea este obligatorie'),
++  tip: z.string().min(1, 'Tipul este obligatoriu'),
++  instanta: z.string().optional().or(z.literal('')),
++  judecator: z.string().optional().or(z.literal('')),
++  descriere: z.string().optional().or(z.literal('')),
++});
++
++export async function POST(request: NextRequest) {
++  try {
++    const json = await request.json();
++    const body = caseSchema.parse(json);
++
++    const newCase = await prisma.case.create({
++      data: {
++        clientId: body.clientId,
++        numar: body.numar,
++        denumire: body.denumire,
++        tip: body.tip,
++        instanta: body.instanta || null,
++        judecator: body.judecator || null,
++        descriere: body.descriere || null,
++        stare: 'deschis',
++      },
++    });
++
++    return NextResponse.json(newCase, { status: 201 });
++  } catch (error) {
++    if (error instanceof z.ZodError) {
++      return NextResponse.json({ error: error.issues }, { status: 400 });
++    }
++    console.error('Create case error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
+diff --git a/cabinet-av/src/app/api/clients/route.ts b/cabinet-av/src/app/api/clients/route.ts
+index 537ea9b..8fac596 100644
+--- a/cabinet-av/src/app/api/clients/route.ts
++++ b/cabinet-av/src/app/api/clients/route.ts
+@@ -53,3 +53,37 @@ export async function POST(request: NextRequest) {
+     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+   }
+ }
++
++const clientUpdateSchema = clientSchema.partial().extend({
++  id: z.string().min(1),
++  status: z.enum(['activ', 'arhivat']).optional(),
++});
++
++export async function PATCH(request: NextRequest) {
++  try {
++    const json = await request.json();
++    const { id, ...rest } = clientUpdateSchema.parse(json);
++
++    const client = await prisma.client.update({
++      where: { id },
++      data: {
++        ...(rest.nume !== undefined && { nume: rest.nume }),
++        ...(rest.prenume !== undefined && { prenume: rest.prenume }),
++        ...(rest.idnp !== undefined && { idnp: rest.idnp || null }),
++        ...(rest.telefon !== undefined && { telefon: rest.telefon || null }),
++        ...(rest.email !== undefined && { email: rest.email || null }),
++        ...(rest.adresa !== undefined && { adresa: rest.adresa || null }),
++        ...(rest.note !== undefined && { note: rest.note || null }),
++        ...(rest.status !== undefined && { status: rest.status }),
++      },
++    });
++
++    return NextResponse.json(client);
++  } catch (error) {
++    if (error instanceof z.ZodError) {
++      return NextResponse.json({ error: error.issues }, { status: 400 });
++    }
++    console.error('Update client error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
+diff --git a/cabinet-av/src/app/api/consultations/route.ts b/cabinet-av/src/app/api/consultations/route.ts
+new file mode 100644
+index 0000000..4fe0c3f
+--- /dev/null
++++ b/cabinet-av/src/app/api/consultations/route.ts
+@@ -0,0 +1,34 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import * as z from 'zod';
++
++const consultationSchema = z.object({
++  clientId: z.string().min(1, 'Client lipsă'),
++  transcript: z.string().min(1, 'Transcript lipsă'),
++  structuredData: z.unknown().optional().nullable(),
++  durata: z.coerce.number().optional().nullable(),
++});
++
++export async function POST(request: NextRequest) {
++  try {
++    const json = await request.json();
++    const body = consultationSchema.parse(json);
++
++    const consultation = await prisma.consultation.create({
++      data: {
++        clientId: body.clientId,
++        transcript: body.transcript,
++        structuredData: body.structuredData ? JSON.stringify(body.structuredData) : null,
++        durata: body.durata ?? null,
++      },
++    });
++
++    return NextResponse.json(consultation, { status: 201 });
++  } catch (error) {
++    if (error instanceof z.ZodError) {
++      return NextResponse.json({ error: error.issues }, { status: 400 });
++    }
++    console.error('Create consultation error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
+diff --git a/cabinet-av/src/app/api/contracts/route.ts b/cabinet-av/src/app/api/contracts/route.ts
+new file mode 100644
+index 0000000..5c4b56b
+--- /dev/null
++++ b/cabinet-av/src/app/api/contracts/route.ts
+@@ -0,0 +1,37 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import * as z from 'zod';
++
++const contractSchema = z.object({
++  clientId: z.string().min(1, 'Client lipsă'),
++  tip: z.string().min(1, 'Tipul contractului este obligatoriu'),
++  numar: z.string().optional().or(z.literal('')),
++  data: z.string().optional().or(z.literal('')),
++  onorariu: z.coerce.number().optional().nullable(),
++});
++
++export async function POST(request: NextRequest) {
++  try {
++    const json = await request.json();
++    const body = contractSchema.parse(json);
++
++    const contract = await prisma.contract.create({
++      data: {
++        clientId: body.clientId,
++        tip: body.tip,
++        numar: body.numar || null,
++        data: body.data ? new Date(body.data) : new Date(),
++        onorariu: body.onorariu ?? null,
++        status: 'activ',
++      },
++    });
++
++    return NextResponse.json(contract, { status: 201 });
++  } catch (error) {
++    if (error instanceof z.ZodError) {
++      return NextResponse.json({ error: error.issues }, { status: 400 });
++    }
++    console.error('Create contract error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
+diff --git a/cabinet-av/src/app/api/notes/route.ts b/cabinet-av/src/app/api/notes/route.ts
+new file mode 100644
+index 0000000..faaa516
+--- /dev/null
++++ b/cabinet-av/src/app/api/notes/route.ts
+@@ -0,0 +1,32 @@
++import { NextRequest, NextResponse } from 'next/server';
++import { prisma } from '@/lib/prisma';
++import * as z from 'zod';
++
++const noteSchema = z.object({
++  clientId: z.string().min(1, 'Client lipsă'),
++  continut: z.string().min(1, 'Conținutul notiței este obligatoriu'),
++  confidential: z.boolean().optional(),
++});
++
++export async function POST(request: NextRequest) {
++  try {
++    const json = await request.json();
++    const body = noteSchema.parse(json);
++
++    const note = await prisma.note.create({
++      data: {
++        clientId: body.clientId,
++        continut: body.continut,
++        confidential: body.confidential ?? false,
++      },
++    });
++
++    return NextResponse.json(note, { status: 201 });
++  } catch (error) {
++    if (error instanceof z.ZodError) {
++      return NextResponse.json({ error: error.issues }, { status: 400 });
++    }
++    console.error('Create note error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
+diff --git a/cabinet-av/src/app/clienti/[id]/client-profile.tsx b/cabinet-av/src/app/clienti/[id]/client-profile.tsx
+index 01d13d1..39ec7ba 100644
+--- a/cabinet-av/src/app/clienti/[id]/client-profile.tsx
++++ b/cabinet-av/src/app/clienti/[id]/client-profile.tsx
+@@ -1,16 +1,15 @@
+ 'use client';
+ 
+-import { useState, useRef } from 'react';
++import { useState, useRef, useEffect } from 'react';
+ import { useRouter } from 'next/navigation';
+ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
+ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+-import { Skeleton } from '@/components/ui/skeleton';
+ import {
+   Edit2, Folder, Mail, Phone, FileText, Mic, MicOff, Clock, CheckCircle2,
+-  AlertCircle, FileCheck, StickyNote, Lock,
++  AlertCircle, FileCheck, StickyNote, Lock, Plus, Eye, EyeOff, Sparkles,
+ } from 'lucide-react';
+ import { format } from 'date-fns';
+ import { ro } from 'date-fns/locale';
+@@ -18,6 +17,17 @@ import { toast } from 'sonner';
+ import { OcrSplitView } from '@/components/ocr/ocr-split-view';
+ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+ import { ScanLine } from 'lucide-react';
++import {
++  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
++} from '@/components/ui/dialog';
++import { Input } from '@/components/ui/input';
++import { Label } from '@/components/ui/label';
++import { Textarea } from '@/components/ui/textarea';
++import { Switch } from '@/components/ui/switch';
++import {
++  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
++} from '@/components/ui/select';
++import { GenerateDocumentModal } from '@/components/editor/generate-document-modal';
+ 
+ type ClientData = Record<string, unknown>;
+ 
+@@ -36,13 +46,38 @@ interface ConsultationResult {
+ 
+ export function ClientProfileClient({ client }: { client: ClientData }) {
+   const router = useRouter();
++
++  // Tab sincronizat cu URL-ul, ca butonul "înapoi" din browser să revină pe tab-ul corect.
++  // Inițializăm cu 'informatii' (la fel ca SSR) și citim tab-ul din URL după montare,
++  // pentru a evita nepotrivirile de hidratare.
+   const [activeTab, setActiveTab] = useState('informatii');
+ 
++  const handleTabChange = (value: string) => {
++    setActiveTab(value);
++    if (typeof window !== 'undefined') {
++      const url = new URL(window.location.href);
++      url.searchParams.set('tab', value);
++      window.history.replaceState(window.history.state, '', url.toString());
++    }
++  };
++
++  // La montare și la navigare înapoi/înainte din browser (popstate), preluăm tab-ul din URL
++  useEffect(() => {
++    const syncFromUrl = () => {
++      const tab = new URLSearchParams(window.location.search).get('tab') || 'informatii';
++      setActiveTab(tab);
++    };
++    syncFromUrl();
++    window.addEventListener('popstate', syncFromUrl);
++    return () => window.removeEventListener('popstate', syncFromUrl);
++  }, []);
++
+   // Consultation state
+   const [recording, setRecording] = useState(false);
+   const [transcribing, setTranscribing] = useState(false);
+   const [consultResult, setConsultResult] = useState<ConsultationResult | null>(null);
+   const [recordingTime, setRecordingTime] = useState(0);
++  const [savingConsult, setSavingConsult] = useState(false);
+   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+   const chunksRef = useRef<Blob[]>([]);
+   const timerRef = useRef<NodeJS.Timeout | null>(null);
+@@ -50,6 +85,148 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+   // OCR sheet
+   const [ocrOpen, setOcrOpen] = useState(false);
+ 
++  // Dialog: editare client
++  const [editOpen, setEditOpen] = useState(false);
++  const [editForm, setEditForm] = useState({
++    nume: String(client.nume || ''),
++    prenume: String(client.prenume || ''),
++    idnp: String(client.idnp || ''),
++    telefon: String(client.telefon || ''),
++    email: String(client.email || ''),
++    adresa: String(client.adresa || ''),
++    note: String(client.note || ''),
++  });
++  const [savingEdit, setSavingEdit] = useState(false);
++
++  // Dialog: dosar nou
++  const [caseOpen, setCaseOpen] = useState(false);
++  const [caseForm, setCaseForm] = useState({
++    numar: '', denumire: '', tip: 'civil', instanta: '', judecator: '', descriere: '',
++  });
++  const [savingCase, setSavingCase] = useState(false);
++
++  // Document nou (modal de generare)
++  const [docModalOpen, setDocModalOpen] = useState(false);
++
++  // Notițe: dezvăluire confidențiale + adăugare inline
++  const [revealedNotes, setRevealedNotes] = useState<Set<string>>(new Set());
++  const [noteFormOpen, setNoteFormOpen] = useState(false);
++  const [noteForm, setNoteForm] = useState({ continut: '', confidential: false });
++  const [savingNote, setSavingNote] = useState(false);
++
++  // Contracte: adăugare inline
++  const [contractFormOpen, setContractFormOpen] = useState(false);
++  const [contractForm, setContractForm] = useState({
++    tip: 'asistenta_juridica', numar: '', data: '', onorariu: '',
++  });
++  const [savingContract, setSavingContract] = useState(false);
++
++  const handleSaveEdit = async () => {
++    if (editForm.nume.trim().length < 2 || editForm.prenume.trim().length < 2) {
++      toast.error('Numele și prenumele sunt obligatorii (minim 2 caractere).');
++      return;
++    }
++    setSavingEdit(true);
++    try {
++      const res = await fetch('/api/clients', {
++        method: 'PATCH',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ id: client.id, ...editForm }),
++      });
++      if (!res.ok) throw new Error();
++      toast.success('Client actualizat');
++      setEditOpen(false);
++      router.refresh();
++    } catch {
++      toast.error('Eroare la actualizarea clientului.');
++    } finally {
++      setSavingEdit(false);
++    }
++  };
++
++  const handleSaveCase = async () => {
++    if (!caseForm.numar.trim() || caseForm.denumire.trim().length < 2) {
++      toast.error('Numărul și denumirea dosarului sunt obligatorii.');
++      return;
++    }
++    setSavingCase(true);
++    try {
++      const res = await fetch('/api/cases', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ clientId: client.id, ...caseForm }),
++      });
++      if (!res.ok) throw new Error();
++      const newCase = await res.json();
++      toast.success('Dosar creat');
++      setCaseOpen(false);
++      router.push(`/dosare/${newCase.id}`);
++    } catch {
++      toast.error('Eroare la crearea dosarului.');
++    } finally {
++      setSavingCase(false);
++    }
++  };
++
++  const handleSaveNote = async () => {
++    if (!noteForm.continut.trim()) {
++      toast.error('Conținutul notiței este obligatoriu.');
++      return;
++    }
++    setSavingNote(true);
++    try {
++      const res = await fetch('/api/notes', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ clientId: client.id, ...noteForm }),
++      });
++      if (!res.ok) throw new Error();
++      toast.success('Notiță adăugată');
++      setNoteForm({ continut: '', confidential: false });
++      setNoteFormOpen(false);
++      router.refresh();
++    } catch {
++      toast.error('Eroare la salvarea notiței.');
++    } finally {
++      setSavingNote(false);
++    }
++  };
++
++  const handleSaveContract = async () => {
++    setSavingContract(true);
++    try {
++      const res = await fetch('/api/contracts', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({
++          clientId: client.id,
++          tip: contractForm.tip,
++          numar: contractForm.numar,
++          data: contractForm.data,
++          onorariu: contractForm.onorariu ? Number(contractForm.onorariu) : null,
++        }),
++      });
++      if (!res.ok) throw new Error();
++      toast.success('Contract adăugat');
++      setContractForm({ tip: 'asistenta_juridica', numar: '', data: '', onorariu: '' });
++      setContractFormOpen(false);
++      router.refresh();
++    } catch {
++      toast.error('Eroare la salvarea contractului.');
++    } finally {
++      setSavingContract(false);
++    }
++  };
++
++  const toggleReveal = (id: string) => {
++    setRevealedNotes((prev) => {
++      const next = new Set(prev);
++      if (next.has(id)) next.delete(id);
++      else next.add(id);
++      return next;
++    });
++  };
++
+   const getInitials = (nume: string, prenume: string) =>
+     `${prenume?.charAt(0) || ''}${nume?.charAt(0) || ''}`.toUpperCase();
+ 
+@@ -107,6 +284,31 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+     return `${m}:${s}`;
+   };
+ 
++  const handleSaveConsultation = async () => {
++    if (!consultResult) return;
++    setSavingConsult(true);
++    try {
++      const res = await fetch('/api/consultations', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({
++          clientId: client.id,
++          transcript: consultResult.transcript,
++          structuredData: consultResult.structuredData,
++          durata: recordingTime,
++        }),
++      });
++      if (!res.ok) throw new Error();
++      toast.success('Consultație salvată la profil');
++      setConsultResult(null);
++      router.refresh();
++    } catch {
++      toast.error('Eroare la salvarea consultației.');
++    } finally {
++      setSavingConsult(false);
++    }
++  };
++
+   return (
+     <div className="space-y-6">
+       {/* Header */}
+@@ -146,17 +348,17 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+           <Button variant="outline" className="gap-2" onClick={() => setOcrOpen(true)}>
+             <ScanLine className="h-4 w-4" /> OCR
+           </Button>
+-          <Button variant="outline" className="gap-2">
++          <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
+             <Edit2 className="h-4 w-4" /> Editează
+           </Button>
+-          <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
++          <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setCaseOpen(true)}>
+             <Folder className="h-4 w-4" /> Dosar Nou
+           </Button>
+         </div>
+       </div>
+ 
+       {/* Tabs */}
+-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
++      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+         <TabsList className="h-12 w-full justify-start overflow-x-auto rounded-none border-b border-slate-200 bg-transparent p-0 dark:border-slate-800">
+           {[
+             { value: 'informatii', label: 'Informații' },
+@@ -241,7 +443,15 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+           </TabsContent>
+ 
+           {/* TAB: Documente */}
+-          <TabsContent value="documente" className="mt-0">
++          <TabsContent value="documente" className="mt-0 space-y-4">
++            <div className="flex items-center justify-end gap-2">
++              <Button variant="outline" size="sm" className="gap-2" onClick={() => setOcrOpen(true)}>
++                <ScanLine className="h-4 w-4" /> Scanează (OCR)
++              </Button>
++              <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setDocModalOpen(true)}>
++                <Sparkles className="h-4 w-4" /> Document nou
++              </Button>
++            </div>
+             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+               {Array.isArray(client.documents) && (client.documents as ClientData[]).map((doc) => (
+                 <div
+@@ -371,8 +581,8 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+                       )}
+ 
+                       <div className="flex gap-2">
+-                        <Button className="bg-indigo-600 hover:bg-indigo-700">
+-                          Adaugă consultație la profil
++                        <Button className="bg-indigo-600 hover:bg-indigo-700" disabled={savingConsult} onClick={handleSaveConsultation}>
++                          {savingConsult ? 'Se salvează...' : 'Adaugă consultație la profil'}
+                         </Button>
+                         <Button variant="outline" onClick={() => setConsultResult(null)}>
+                           Înregistrare nouă
+@@ -473,6 +683,51 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+           {/* TAB: Contracte */}
+           <TabsContent value="contracte" className="mt-0">
+             <div className="space-y-3">
++              <div className="flex items-center justify-end">
++                <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setContractFormOpen((v) => !v)}>
++                  <Plus className="h-4 w-4" /> Contract nou
++                </Button>
++              </div>
++
++              {contractFormOpen && (
++                <Card className="border-indigo-200 dark:border-indigo-800">
++                  <CardContent className="p-4 space-y-3">
++                    <div className="grid gap-3 sm:grid-cols-2">
++                      <div className="space-y-1.5">
++                        <Label className="text-xs">Tip contract</Label>
++                        <Select value={contractForm.tip} onValueChange={(v) => setContractForm((f) => ({ ...f, tip: v }))}>
++                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
++                          <SelectContent>
++                            <SelectItem value="asistenta_juridica">Asistență juridică</SelectItem>
++                            <SelectItem value="reprezentare">Reprezentare</SelectItem>
++                            <SelectItem value="consultanta">Consultanță</SelectItem>
++                            <SelectItem value="abonament">Abonament</SelectItem>
++                          </SelectContent>
++                        </Select>
++                      </div>
++                      <div className="space-y-1.5">
++                        <Label className="text-xs">Număr</Label>
++                        <Input value={contractForm.numar} onChange={(e) => setContractForm((f) => ({ ...f, numar: e.target.value }))} placeholder="12/2024" />
++                      </div>
++                      <div className="space-y-1.5">
++                        <Label className="text-xs">Data</Label>
++                        <Input type="date" value={contractForm.data} onChange={(e) => setContractForm((f) => ({ ...f, data: e.target.value }))} />
++                      </div>
++                      <div className="space-y-1.5">
++                        <Label className="text-xs">Onorariu (lei)</Label>
++                        <Input type="number" value={contractForm.onorariu} onChange={(e) => setContractForm((f) => ({ ...f, onorariu: e.target.value }))} placeholder="15000" />
++                      </div>
++                    </div>
++                    <div className="flex justify-end gap-2">
++                      <Button variant="outline" size="sm" onClick={() => setContractFormOpen(false)}>Anulează</Button>
++                      <Button size="sm" disabled={savingContract} onClick={handleSaveContract} className="bg-indigo-600 hover:bg-indigo-700">
++                        {savingContract ? 'Se salvează...' : 'Salvează contract'}
++                      </Button>
++                    </div>
++                  </CardContent>
++                </Card>
++              )}
++
+               {Array.isArray(client.contracts) && (client.contracts as ClientData[]).length > 0 ? (
+                 (client.contracts as ClientData[]).map((contract) => (
+                   <Card key={String(contract.id)}>
+@@ -510,7 +765,7 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+                 <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
+                   <FileCheck className="mx-auto h-8 w-8 text-slate-400" />
+                   <p className="mt-2 text-sm text-slate-500">Niciun contract. Adăugați primul contract.</p>
+-                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm">+ Contract nou</Button>
++                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm" onClick={() => setContractFormOpen(true)}>+ Contract nou</Button>
+                 </div>
+               )}
+             </div>
+@@ -519,6 +774,47 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+           {/* TAB: Notițe */}
+           <TabsContent value="notite" className="mt-0">
+             <div className="space-y-3">
++              <div className="flex items-center justify-end">
++                <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setNoteFormOpen((v) => !v)}>
++                  <Plus className="h-4 w-4" /> Notiță nouă
++                </Button>
++              </div>
++
++              {noteFormOpen && (
++                <Card className="border-indigo-200 dark:border-indigo-800">
++                  <CardContent className="p-4 space-y-3">
++                    <Textarea
++                      value={noteForm.continut}
++                      onChange={(e) => setNoteForm((f) => ({ ...f, continut: e.target.value }))}
++                      placeholder="Scrieți notița aici..."
++                      className="min-h-[90px]"
++                    />
++                    <div className="flex items-center justify-between">
++                      <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
++                        <Switch
++                          checked={noteForm.confidential}
++                          onCheckedChange={(v) => setNoteForm((f) => ({ ...f, confidential: v }))}
++                        />
++                        <span className="flex items-center gap-1">
++                          <Lock className="h-3.5 w-3.5 text-amber-600" /> Notiță confidențială
++                        </span>
++                      </label>
++                      <div className="flex gap-2">
++                        <Button variant="outline" size="sm" onClick={() => setNoteFormOpen(false)}>Anulează</Button>
++                        <Button size="sm" disabled={savingNote} onClick={handleSaveNote} className="bg-indigo-600 hover:bg-indigo-700">
++                          {savingNote ? 'Se salvează...' : 'Salvează notiță'}
++                        </Button>
++                      </div>
++                    </div>
++                    {noteForm.confidential && (
++                      <p className="text-xs text-amber-600 dark:text-amber-400">
++                        Notițele confidențiale rămân ascunse până la apăsarea butonului „Afișează”. (Protecția cu parolă va fi adăugată ulterior.)
++                      </p>
++                    )}
++                  </CardContent>
++                </Card>
++              )}
++
+               {Array.isArray(client.notes) && (client.notes as ClientData[]).length > 0 ? (
+                 (client.notes as ClientData[]).map((note) => (
+                   <Card key={String(note.id)}>
+@@ -539,8 +835,32 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+                             <span className="text-xs text-slate-400">
+                               {note.createdAt ? format(new Date(String(note.createdAt)), 'd MMM yyyy', { locale: ro }) : ''}
+                             </span>
++                            {!!note.confidential && (
++                              <Button
++                                variant="ghost"
++                                size="sm"
++                                className="ml-auto h-6 gap-1 px-2 text-xs text-amber-700 hover:bg-amber-50 dark:text-amber-400"
++                                onClick={() => toggleReveal(String(note.id))}
++                              >
++                                {revealedNotes.has(String(note.id)) ? (
++                                  <><EyeOff className="h-3 w-3" /> Ascunde</>
++                                ) : (
++                                  <><Eye className="h-3 w-3" /> Afișează</>
++                                )}
++                              </Button>
++                            )}
+                           </div>
+-                          <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{String(note.continut)}</p>
++                          {note.confidential && !revealedNotes.has(String(note.id)) ? (
++                            <button
++                              onClick={() => toggleReveal(String(note.id))}
++                              className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-left text-sm text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
++                            >
++                              <Lock className="h-3.5 w-3.5 shrink-0" />
++                              <span className="select-none italic">Notiță confidențială — apăsați pentru a afișa conținutul</span>
++                            </button>
++                          ) : (
++                            <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{String(note.continut)}</p>
++                          )}
+                         </div>
+                       </div>
+                     </CardContent>
+@@ -550,7 +870,7 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+                 <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
+                   <StickyNote className="mx-auto h-8 w-8 text-slate-400" />
+                   <p className="mt-2 text-sm text-slate-500">Nicio notiță. Adăugați prima notiță.</p>
+-                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm">+ Notiță nouă</Button>
++                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm" onClick={() => setNoteFormOpen(true)}>+ Notiță nouă</Button>
+                 </div>
+               )}
+             </div>
+@@ -572,6 +892,116 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+           </div>
+         </SheetContent>
+       </Sheet>
++
++      {/* Dialog: Editare client */}
++      <Dialog open={editOpen} onOpenChange={setEditOpen}>
++        <DialogContent className="sm:max-w-[520px]">
++          <DialogHeader>
++            <DialogTitle>Editează client</DialogTitle>
++            <DialogDescription>Actualizați datele clientului.</DialogDescription>
++          </DialogHeader>
++          <div className="space-y-4 py-2">
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-1.5">
++                <Label htmlFor="edit-nume">Nume <span className="text-red-500">*</span></Label>
++                <Input id="edit-nume" value={editForm.nume} onChange={(e) => setEditForm((f) => ({ ...f, nume: e.target.value }))} />
++              </div>
++              <div className="space-y-1.5">
++                <Label htmlFor="edit-prenume">Prenume <span className="text-red-500">*</span></Label>
++                <Input id="edit-prenume" value={editForm.prenume} onChange={(e) => setEditForm((f) => ({ ...f, prenume: e.target.value }))} />
++              </div>
++            </div>
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-1.5">
++                <Label htmlFor="edit-idnp">IDNP</Label>
++                <Input id="edit-idnp" value={editForm.idnp} onChange={(e) => setEditForm((f) => ({ ...f, idnp: e.target.value }))} />
++              </div>
++              <div className="space-y-1.5">
++                <Label htmlFor="edit-telefon">Telefon</Label>
++                <Input id="edit-telefon" value={editForm.telefon} onChange={(e) => setEditForm((f) => ({ ...f, telefon: e.target.value }))} />
++              </div>
++            </div>
++            <div className="space-y-1.5">
++              <Label htmlFor="edit-email">Email</Label>
++              <Input id="edit-email" type="email" value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} />
++            </div>
++            <div className="space-y-1.5">
++              <Label htmlFor="edit-adresa">Adresă</Label>
++              <Textarea id="edit-adresa" value={editForm.adresa} onChange={(e) => setEditForm((f) => ({ ...f, adresa: e.target.value }))} className="h-16" />
++            </div>
++            <div className="space-y-1.5">
++              <Label htmlFor="edit-note">Note interne</Label>
++              <Textarea id="edit-note" value={editForm.note} onChange={(e) => setEditForm((f) => ({ ...f, note: e.target.value }))} className="h-16" />
++            </div>
++          </div>
++          <DialogFooter>
++            <Button variant="outline" onClick={() => setEditOpen(false)}>Anulează</Button>
++            <Button disabled={savingEdit} onClick={handleSaveEdit} className="bg-indigo-600 hover:bg-indigo-700">
++              {savingEdit ? 'Se salvează...' : 'Salvează modificările'}
++            </Button>
++          </DialogFooter>
++        </DialogContent>
++      </Dialog>
++
++      {/* Dialog: Dosar nou */}
++      <Dialog open={caseOpen} onOpenChange={setCaseOpen}>
++        <DialogContent className="sm:max-w-[520px]">
++          <DialogHeader>
++            <DialogTitle>Dosar nou</DialogTitle>
++            <DialogDescription>
++              Creați un dosar pentru {String(client.prenume || '')} {String(client.nume || '')}.
++            </DialogDescription>
++          </DialogHeader>
++          <div className="space-y-4 py-2">
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-1.5">
++                <Label htmlFor="case-numar">Număr dosar <span className="text-red-500">*</span></Label>
++                <Input id="case-numar" value={caseForm.numar} onChange={(e) => setCaseForm((f) => ({ ...f, numar: e.target.value }))} placeholder="2-345/2024" />
++              </div>
++              <div className="space-y-1.5">
++                <Label htmlFor="case-tip">Tip</Label>
++                <Select value={caseForm.tip} onValueChange={(v) => setCaseForm((f) => ({ ...f, tip: v }))}>
++                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
++                  <SelectContent>
++                    <SelectItem value="civil">Civil</SelectItem>
++                    <SelectItem value="penal">Penal</SelectItem>
++                    <SelectItem value="familial">Familial</SelectItem>
++                    <SelectItem value="administrativ">Administrativ</SelectItem>
++                    <SelectItem value="comercial">Comercial</SelectItem>
++                  </SelectContent>
++                </Select>
++              </div>
++            </div>
++            <div className="space-y-1.5">
++              <Label htmlFor="case-denumire">Denumire <span className="text-red-500">*</span></Label>
++              <Input id="case-denumire" value={caseForm.denumire} onChange={(e) => setCaseForm((f) => ({ ...f, denumire: e.target.value }))} placeholder="Desfacerea căsătoriei" />
++            </div>
++            <div className="grid grid-cols-2 gap-4">
++              <div className="space-y-1.5">
++                <Label htmlFor="case-instanta">Instanță</Label>
++                <Input id="case-instanta" value={caseForm.instanta} onChange={(e) => setCaseForm((f) => ({ ...f, instanta: e.target.value }))} placeholder="Judecătoria Chișinău" />
++              </div>
++              <div className="space-y-1.5">
++                <Label htmlFor="case-judecator">Judecător</Label>
++                <Input id="case-judecator" value={caseForm.judecator} onChange={(e) => setCaseForm((f) => ({ ...f, judecator: e.target.value }))} />
++              </div>
++            </div>
++            <div className="space-y-1.5">
++              <Label htmlFor="case-descriere">Descriere</Label>
++              <Textarea id="case-descriere" value={caseForm.descriere} onChange={(e) => setCaseForm((f) => ({ ...f, descriere: e.target.value }))} className="h-16" />
++            </div>
++          </div>
++          <DialogFooter>
++            <Button variant="outline" onClick={() => setCaseOpen(false)}>Anulează</Button>
++            <Button disabled={savingCase} onClick={handleSaveCase} className="bg-indigo-600 hover:bg-indigo-700">
++              {savingCase ? 'Se creează...' : 'Creează dosar'}
++            </Button>
++          </DialogFooter>
++        </DialogContent>
++      </Dialog>
++
++      {/* Modal: Generare document nou */}
++      <GenerateDocumentModal open={docModalOpen} onOpenChange={setDocModalOpen} />
+     </div>
+   );
+ }
+diff --git a/cabinet-av/src/app/clienti/client-list.tsx b/cabinet-av/src/app/clienti/client-list.tsx
+index c4f31e9..2ae2156 100644
+--- a/cabinet-av/src/app/clienti/client-list.tsx
++++ b/cabinet-av/src/app/clienti/client-list.tsx
+@@ -25,7 +25,6 @@ import { cn } from '@/lib/utils';
+ import { Badge } from '@/components/ui/badge';
+ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Label } from '@/components/ui/label';
+-import { Textarea } from '@/components/ui/textarea';
+ import { Search, Plus, MoreHorizontal, ArrowUpDown, Users } from 'lucide-react';
+ import { EmptyState } from '@/components/shared/empty-state';
+ import { useForm } from 'react-hook-form';
+@@ -45,12 +44,29 @@ const clientSchema = z.object({
+   idnp: z.string().regex(/^\d{13}$/, 'IDNP trebuie să aibă exact 13 cifre').optional().or(z.literal('')),
+   telefon: z.string().optional().or(z.literal('')),
+   email: z.string().email('Email invalid').optional().or(z.literal('')),
+-  adresa: z.string().optional().or(z.literal('')),
++  // Adresă structurată — câmpuri separate pentru claritate
++  strada: z.string().optional().or(z.literal('')),
++  numar: z.string().optional().or(z.literal('')),
++  oras: z.string().optional().or(z.literal('')),
++  codPostal: z.string().optional().or(z.literal('')),
+   note: z.string().optional().or(z.literal('')),
+ });
+ 
+ type ClientFormValues = z.infer<typeof clientSchema>;
+ 
++// Compune câmpurile de adresă într-un singur string lizibil
++function buildAdresa(v: ClientFormValues): string {
++  const linieStrada = [
++    v.strada?.trim(),
++    v.numar?.trim() ? `nr. ${v.numar.trim()}` : '',
++  ].filter(Boolean).join(', ');
++  const linieOras = [
++    v.codPostal?.trim(),
++    v.oras?.trim(),
++  ].filter(Boolean).join(' ');
++  return [linieStrada, linieOras].filter(Boolean).join(', ');
++}
++
+ type ClientData = {
+   id: string;
+   nume: string;
+@@ -85,10 +101,19 @@ export function ClientListClient({ initialClients }: ClientListProps) {
+ 
+   const onSubmit = async (data: ClientFormValues) => {
+     try {
++      const payload = {
++        nume: data.nume,
++        prenume: data.prenume,
++        idnp: data.idnp,
++        telefon: data.telefon,
++        email: data.email,
++        adresa: buildAdresa(data),
++        note: data.note,
++      };
+       const res = await fetch('/api/clients', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+-        body: JSON.stringify(data),
++        body: JSON.stringify(payload),
+       });
+ 
+       if (!res.ok) throw new Error('Failed to create client');
+@@ -197,9 +222,28 @@ export function ClientListClient({ initialClients }: ClientListProps) {
+                 <Input id="email" type="email" {...register('email')} placeholder="ion.popescu@exemplu.md" />
+                 {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+               </div>
+-              <div className="space-y-2">
+-                <Label htmlFor="adresa">Adresă</Label>
+-                <Textarea id="adresa" {...register('adresa')} placeholder="Chișinău, str. ..." className="h-20" />
++              <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
++                <Label className="text-sm font-semibold">Adresă</Label>
++                <div className="grid grid-cols-3 gap-3">
++                  <div className="col-span-2 space-y-1.5">
++                    <Label htmlFor="strada" className="text-xs text-slate-500">Stradă</Label>
++                    <Input id="strada" {...register('strada')} placeholder="str. Mihai Eminescu" />
++                  </div>
++                  <div className="space-y-1.5">
++                    <Label htmlFor="numar" className="text-xs text-slate-500">Număr</Label>
++                    <Input id="numar" {...register('numar')} placeholder="23A" />
++                  </div>
++                </div>
++                <div className="grid grid-cols-3 gap-3">
++                  <div className="col-span-2 space-y-1.5">
++                    <Label htmlFor="oras" className="text-xs text-slate-500">Oraș / Localitate</Label>
++                    <Input id="oras" {...register('oras')} placeholder="Chișinău" />
++                  </div>
++                  <div className="space-y-1.5">
++                    <Label htmlFor="codPostal" className="text-xs text-slate-500">Cod poștal</Label>
++                    <Input id="codPostal" {...register('codPostal')} placeholder="MD-2001" />
++                  </div>
++                </div>
+               </div>
+               <DialogFooter>
+                 <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+diff --git a/cabinet-av/src/app/globals.css b/cabinet-av/src/app/globals.css
+index 7894c70..fc76b1a 100644
+--- a/cabinet-av/src/app/globals.css
++++ b/cabinet-av/src/app/globals.css
+@@ -164,4 +164,92 @@ span[data-reason]:hover {
+ .dark .confirmed-zone {
+   background-color: #14532d;
+   border-bottom-color: #16a34a;
++}
++
++/* ===========================================================================
++   Document juridic — formatare structurată (editor TipTap + preview generare)
++   Asigură că documentele au structură clară: titluri, secțiuni, liste, tabele.
++   =========================================================================== */
++.ProseMirror,
++.legal-document {
++  font-family: 'Times New Roman', Georgia, serif;
++  font-size: 12pt;
++  line-height: 1.6;
++  color: #111;
++}
++.dark .ProseMirror,
++.dark .legal-document {
++  color: #e2e8f0;
++}
++
++/* Titlul principal — centrat, majuscule */
++.ProseMirror h1,
++.legal-document h1 {
++  text-align: center;
++  text-transform: uppercase;
++  font-size: 16pt;
++  font-weight: 700;
++  margin: 0 0 0.25rem 0;
++  letter-spacing: 0.02em;
++}
++/* Subtitlu sub titlu — centrat */
++.ProseMirror h2,
++.legal-document h2 {
++  text-align: center;
++  font-size: 12pt;
++  font-weight: 600;
++  margin: 0 0 1.5rem 0;
++}
++/* Secțiuni numerotate */
++.ProseMirror h3,
++.legal-document h3 {
++  font-size: 12pt;
++  font-weight: 700;
++  margin: 1.5rem 0 0.5rem 0;
++}
++/* Paragrafe — justify, cu spațiere clară */
++.ProseMirror p,
++.legal-document p {
++  text-align: justify;
++  margin: 0 0 0.75rem 0;
++}
++/* Liste — numerotări și marcatori vizibili */
++.ProseMirror ol,
++.ProseMirror ul,
++.legal-document ol,
++.legal-document ul {
++  margin: 0 0 0.75rem 0;
++  padding-left: 1.75rem;
++}
++.ProseMirror ol { list-style: decimal; }
++.ProseMirror ul { list-style: disc; }
++.ProseMirror li,
++.legal-document li {
++  margin: 0 0 0.35rem 0;
++  text-align: justify;
++}
++/* Tabele — borduri clare */
++.ProseMirror table,
++.legal-document table {
++  border-collapse: collapse;
++  width: 100%;
++  margin: 0.75rem 0 1rem 0;
++}
++.ProseMirror th,
++.ProseMirror td,
++.legal-document th,
++.legal-document td {
++  border: 1px solid #94a3b8;
++  padding: 6px 10px;
++  text-align: left;
++  vertical-align: top;
++}
++.ProseMirror th,
++.legal-document th {
++  background: #f1f5f9;
++  font-weight: 700;
++}
++.dark .ProseMirror th,
++.dark .legal-document th {
++  background: #1e293b;
+ }
+\ No newline at end of file
+diff --git a/cabinet-av/src/components/editor/generate-document-modal.tsx b/cabinet-av/src/components/editor/generate-document-modal.tsx
+index 9fdf3c7..d0a7a26 100644
+--- a/cabinet-av/src/components/editor/generate-document-modal.tsx
++++ b/cabinet-av/src/components/editor/generate-document-modal.tsx
+@@ -330,7 +330,7 @@ export function GenerateDocumentModal({ open, onOpenChange }: GenerateDocumentMo
+                   )}
+                   <div
+                     ref={previewRef}
+-                    className="max-h-[400px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-8 prose prose-slate dark:prose-invert max-w-none dark:border-slate-700 dark:bg-slate-950 text-sm"
++                    className="legal-document max-h-[400px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-8 max-w-none dark:border-slate-700 dark:bg-slate-950"
+                     dangerouslySetInnerHTML={{ __html: generatedHtml }}
+                   />
+                 </div>
+diff --git a/cabinet-av/src/components/ocr/ocr-split-view.tsx b/cabinet-av/src/components/ocr/ocr-split-view.tsx
+index 2e2f154..4de15d8 100644
+--- a/cabinet-av/src/components/ocr/ocr-split-view.tsx
++++ b/cabinet-av/src/components/ocr/ocr-split-view.tsx
+@@ -5,9 +5,8 @@ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+ import { Badge } from '@/components/ui/badge';
+ import { Progress } from '@/components/ui/progress';
+-import { Skeleton } from '@/components/ui/skeleton';
+ import { toast } from 'sonner';
+-import { Upload, CheckCircle, AlertTriangle, ZoomIn, ZoomOut, Check } from 'lucide-react';
++import { Upload, CheckCircle, AlertTriangle, ZoomIn, ZoomOut, Check, FileText, RefreshCw } from 'lucide-react';
+ 
+ interface OcrField {
+   nume_camp: string;
+@@ -31,17 +30,27 @@ interface OcrSplitViewProps {
+ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
+   const fileInputRef = useRef<HTMLInputElement>(null);
+   const [imageUrl, setImageUrl] = useState<string | null>(null);
++  const [isPdf, setIsPdf] = useState(false);
+   const [loading, setLoading] = useState(false);
+   const [result, setResult] = useState<OcrResult | null>(null);
++  const [error, setError] = useState<string | null>(null);
+   const [editedFields, setEditedFields] = useState<Record<string, string>>({});
+   const [zoom, setZoom] = useState(100);
++  const [dragActive, setDragActive] = useState(false);
++  const [lastFile, setLastFile] = useState<File | null>(null);
+ 
+-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+-    const file = e.target.files?.[0];
+-    if (!file) return;
++  const processFile = async (file: File) => {
++    if (file.size > 10 * 1024 * 1024) {
++      toast.error('Fișierul depășește 10MB.');
++      return;
++    }
++    const pdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+ 
+     setImageUrl(URL.createObjectURL(file));
++    setIsPdf(pdf);
++    setLastFile(file);
+     setResult(null);
++    setError(null);
+     setEditedFields({});
+     setLoading(true);
+ 
+@@ -50,7 +59,17 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
+       formData.append('file', file);
+ 
+       const res = await fetch('/api/ai/ocr', { method: 'POST', body: formData });
+-      if (!res.ok) throw new Error();
++      if (!res.ok) {
++        const body = await res.json().catch(() => null);
++        if (res.status === 500 && body?.error?.includes('API key')) {
++          throw new Error('Cheia Gemini API nu este configurată pe server.');
++        }
++        throw new Error(
++          pdf
++            ? 'Procesarea PDF a eșuat. Încercați din nou sau un screenshot (JPG/PNG) al paginii.'
++            : 'Procesare OCR eșuată. Încercați din nou sau alt fișier.'
++        );
++      }
+ 
+       const data: OcrResult = await res.json();
+       setResult(data);
+@@ -58,13 +77,46 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
+       const initial: Record<string, string> = {};
+       (data.campuri_identificate || []).forEach((f) => { initial[f.nume_camp] = f.valoare; });
+       setEditedFields(initial);
+-    } catch {
+-      toast.error('OCR eșuat. Verificați cheia Gemini API.');
++    } catch (err) {
++      const msg = err instanceof Error ? err.message : 'OCR eșuat.';
++      setError(msg);
++      toast.error(msg);
+     } finally {
+       setLoading(false);
+     }
+   };
+ 
++  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
++    const file = e.target.files?.[0];
++    if (file) await processFile(file);
++    // reset, ca selectarea aceluiași fișier să declanșeze din nou onChange
++    e.target.value = '';
++  };
++
++  const handleDrop = async (e: React.DragEvent) => {
++    e.preventDefault();
++    setDragActive(false);
++    const file = e.dataTransfer.files?.[0];
++    if (file) await processFile(file);
++  };
++
++  const handleDragOver = (e: React.DragEvent) => {
++    e.preventDefault();
++    if (!dragActive) setDragActive(true);
++  };
++
++  const handleDragLeave = (e: React.DragEvent) => {
++    e.preventDefault();
++    setDragActive(false);
++  };
++
++  const resetView = () => {
++    setImageUrl(null);
++    setResult(null);
++    setError(null);
++    setIsPdf(false);
++  };
++
+   const getConfidenceInfo = (confidence: number) => {
+     if (confidence >= 0.9) return { color: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle, label: `${Math.round(confidence * 100)}%` };
+     if (confidence >= 0.75) return { color: 'text-amber-600 dark:text-amber-400', icon: AlertTriangle, label: `${Math.round(confidence * 100)}%` };
+@@ -85,14 +137,23 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
+       {/* Upload zone */}
+       {!imageUrl && !loading && (
+         <div
+-          className="flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-12 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-600"
++          className={`flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-colors ${
++            dragActive
++              ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/30'
++              : 'border-slate-300 bg-slate-50 hover:border-indigo-400 hover:bg-indigo-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-600'
++          }`}
+           onClick={() => fileInputRef.current?.click()}
++          onDrop={handleDrop}
++          onDragOver={handleDragOver}
++          onDragLeave={handleDragLeave}
+         >
+           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/40">
+             <Upload className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+           </div>
+           <div>
+-            <p className="text-base font-semibold text-slate-900 dark:text-white">Trage o poză sau click pentru a selecta</p>
++            <p className="text-base font-semibold text-slate-900 dark:text-white">
++              {dragActive ? 'Eliberați fișierul aici' : 'Trage un fișier aici sau click pentru a selecta'}
++            </p>
+             <p className="mt-1 text-sm text-slate-500">Acceptă: JPG, PNG, HEIC, PDF • Max 10MB</p>
+           </div>
+           <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
+@@ -125,19 +186,28 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
+                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setZoom((z) => Math.min(200, z + 25))}>
+                   <ZoomIn className="h-3.5 w-3.5" />
+                 </Button>
+-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setImageUrl(null); setResult(null); }}>
+-                  Altă poză
++                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetView}>
++                  Alt fișier
+                 </Button>
+               </div>
+             </div>
+             <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-900 p-4">
+-              {/* eslint-disable-next-line @next/next/no-img-element */}
+-              <img
+-                src={imageUrl}
+-                alt="Document original"
+-                style={{ width: `${zoom}%`, transformOrigin: 'top left' }}
+-                className="rounded shadow-sm mx-auto block"
+-              />
++              {isPdf ? (
++                <iframe
++                  src={imageUrl}
++                  title="Document PDF"
++                  className="h-full w-full rounded border border-slate-200 bg-white dark:border-slate-700"
++                  style={{ minHeight: 480 }}
++                />
++              ) : (
++                /* eslint-disable-next-line @next/next/no-img-element */
++                <img
++                  src={imageUrl}
++                  alt="Document original"
++                  style={{ width: `${zoom}%`, transformOrigin: 'top left' }}
++                  className="rounded shadow-sm mx-auto block"
++                />
++              )}
+             </div>
+           </div>
+ 
+@@ -158,14 +228,32 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
+             </div>
+ 
+             <div className="flex-1 overflow-y-auto p-4">
+-              {!result && (
+-                <div className="space-y-3">
+-                  {[...Array(6)].map((_, i) => (
+-                    <div key={i} className="space-y-1">
+-                      <Skeleton className="h-3 w-24" />
+-                      <Skeleton className="h-9 w-full" />
+-                    </div>
+-                  ))}
++              {!result && error && (
++                <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
++                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
++                    <AlertTriangle className="h-6 w-6 text-red-500" />
++                  </div>
++                  <div>
++                    <p className="text-sm font-semibold text-slate-900 dark:text-white">OCR nu a putut fi finalizat</p>
++                    <p className="mt-1 max-w-xs text-xs text-slate-500">{error}</p>
++                  </div>
++                  <div className="flex gap-2">
++                    {lastFile && (
++                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => processFile(lastFile)}>
++                        <RefreshCw className="h-3.5 w-3.5" /> Reîncearcă
++                      </Button>
++                    )}
++                    <Button size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" onClick={resetView}>
++                      <FileText className="h-3.5 w-3.5" /> Alt fișier
++                    </Button>
++                  </div>
++                </div>
++              )}
++
++              {!result && !error && (
++                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-slate-400">
++                  <FileText className="h-8 w-8" />
++                  <p className="text-sm">Câmpurile detectate vor apărea aici.</p>
+                 </div>
+               )}
+ 
+diff --git a/cabinet-av/src/components/shared/legislative-alerts-drawer.tsx b/cabinet-av/src/components/shared/legislative-alerts-drawer.tsx
+index 168baff..9604b94 100644
+--- a/cabinet-av/src/components/shared/legislative-alerts-drawer.tsx
++++ b/cabinet-av/src/components/shared/legislative-alerts-drawer.tsx
+@@ -1,10 +1,11 @@
+ 'use client';
+ 
+ import { useState } from 'react';
+-import { AlertTriangle, X, ChevronRight, FileText } from 'lucide-react';
++import { AlertTriangle, ChevronRight, FileText, Check } from 'lucide-react';
+ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
++import { toast } from 'sonner';
+ 
+ interface Alert {
+   id: string;
+@@ -18,9 +19,41 @@ interface Alert {
+ 
+ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
+   const [open, setOpen] = useState(false);
++  const [readIds, setReadIds] = useState<Set<string>>(new Set());
++  const [marking, setMarking] = useState<string | null>(null);
++
++  const visibleAlerts = alerts.filter(a => !readIds.has(a.id));
++
++  const markAsRead = async (id: string) => {
++    setMarking(id);
++    // Optimistic UI: ascundem imediat alerta
++    setReadIds(prev => new Set(prev).add(id));
++    try {
++      const res = await fetch('/api/alerts', {
++        method: 'PATCH',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ id, status: 'citita' }),
++      });
++      if (!res.ok) throw new Error();
++      toast.success('Alertă marcată ca citită');
++    } catch {
++      // Rollback dacă persistarea eșuează
++      setReadIds(prev => {
++        const next = new Set(prev);
++        next.delete(id);
++        return next;
++      });
++      toast.error('Nu s-a putut marca alerta. Încercați din nou.');
++    } finally {
++      setMarking(null);
++    }
++  };
+ 
+   if (alerts.length === 0) return null;
+ 
++  // Toate alertele au fost citite: ascundem complet bannerul
++  if (visibleAlerts.length === 0) return null;
++
+   return (
+     <>
+       <button
+@@ -31,10 +64,10 @@ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
+           <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-500" />
+           <div className="flex-1">
+             <h3 className="font-semibold text-amber-900 dark:text-amber-400">
+-              Atenție: {alerts.length} modificări legislative necesită atenția dvs.
++              Atenție: {visibleAlerts.length} modificări legislative necesită atenția dvs.
+             </h3>
+             <div className="mt-1 space-y-1">
+-              {alerts.map(alert => (
++              {visibleAlerts.map(alert => (
+                 <p key={alert.id} className="text-sm text-amber-800 dark:text-amber-300">
+                   <span className="font-medium">{alert.actNormativ}</span>: {alert.titlu}
+                 </p>
+@@ -55,7 +88,7 @@ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
+           </SheetHeader>
+ 
+           <div className="mt-6 space-y-6 overflow-y-auto">
+-            {alerts.map(alert => {
++            {visibleAlerts.map(alert => {
+               const affectedIds: string[] = JSON.parse(alert.affectedCaseIds || '[]');
+               return (
+                 <div key={alert.id} className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/30 dark:bg-amber-950/20">
+@@ -105,9 +138,12 @@ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
+                     <Button
+                       size="sm"
+                       variant="outline"
+-                      className="h-7 border-amber-300 text-amber-700 hover:bg-amber-100 text-xs dark:border-amber-700 dark:text-amber-400"
++                      disabled={marking === alert.id}
++                      onClick={() => markAsRead(alert.id)}
++                      className="h-7 border-amber-300 text-amber-700 hover:bg-amber-100 text-xs dark:border-amber-700 dark:text-amber-400 gap-1"
+                     >
+-                      Marchează citită
++                      <Check className="h-3 w-3" />
++                      {marking === alert.id ? 'Se marchează...' : 'Marchează citită'}
+                     </Button>
+                   </div>
+                 </div>
+-- 
+2.43.0
+
+
+From e240427f7cbd7b4a90e0d8a7567379cf89824cab Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 23 Jun 2026 11:24:47 +0000
+Subject: [PATCH 2/2] Add tab URL sync to case profile + inline contract
+ editing
+
+- case-profile: restructured into Detalii/Documente/Termene tabs with
+  the same URL-sync pattern as client-profile (replaceState + popstate),
+  so the browser back button returns to the correct tab
+- /api/contracts: add PATCH handler to update an existing contract
+  (tip, numar, data, onorariu, status)
+- client-profile contracts tab: each contract card now has an edit
+  button that expands an inline form pre-filled with the contract's
+  current values; saving calls PATCH /api/contracts
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+---
+ cabinet-av/src/app/api/contracts/route.ts     |  33 ++
+ .../src/app/clienti/[id]/client-profile.tsx   | 142 ++++++--
+ .../src/app/dosare/[id]/case-profile.tsx      | 311 +++++++++++-------
+ 3 files changed, 338 insertions(+), 148 deletions(-)
+
+diff --git a/cabinet-av/src/app/api/contracts/route.ts b/cabinet-av/src/app/api/contracts/route.ts
+index 5c4b56b..4336ee7 100644
+--- a/cabinet-av/src/app/api/contracts/route.ts
++++ b/cabinet-av/src/app/api/contracts/route.ts
+@@ -10,6 +10,39 @@ const contractSchema = z.object({
+   onorariu: z.coerce.number().optional().nullable(),
+ });
+ 
++const contractUpdateSchema = z.object({
++  id: z.string().min(1),
++  tip: z.string().optional(),
++  numar: z.string().optional().or(z.literal('')),
++  data: z.string().optional().or(z.literal('')),
++  onorariu: z.coerce.number().optional().nullable(),
++  status: z.enum(['activ', 'expirat', 'reziliat']).optional(),
++});
++
++export async function PATCH(request: NextRequest) {
++  try {
++    const json = await request.json();
++    const body = contractUpdateSchema.parse(json);
++    const { id, ...fields } = body;
++
++    const updateData: Record<string, unknown> = {};
++    if (fields.tip !== undefined) updateData.tip = fields.tip;
++    if (fields.numar !== undefined) updateData.numar = fields.numar || null;
++    if (fields.data !== undefined) updateData.data = fields.data ? new Date(fields.data) : null;
++    if (fields.onorariu !== undefined) updateData.onorariu = fields.onorariu;
++    if (fields.status !== undefined) updateData.status = fields.status;
++
++    const contract = await prisma.contract.update({ where: { id }, data: updateData });
++    return NextResponse.json(contract);
++  } catch (error) {
++    if (error instanceof z.ZodError) {
++      return NextResponse.json({ error: error.issues }, { status: 400 });
++    }
++    console.error('Update contract error:', error);
++    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
++  }
++}
++
+ export async function POST(request: NextRequest) {
+   try {
+     const json = await request.json();
+diff --git a/cabinet-av/src/app/clienti/[id]/client-profile.tsx b/cabinet-av/src/app/clienti/[id]/client-profile.tsx
+index 39ec7ba..803ae07 100644
+--- a/cabinet-av/src/app/clienti/[id]/client-profile.tsx
++++ b/cabinet-av/src/app/clienti/[id]/client-profile.tsx
+@@ -121,6 +121,13 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+   });
+   const [savingContract, setSavingContract] = useState(false);
+ 
++  // Contracte: editare inline
++  const [editingContractId, setEditingContractId] = useState<string | null>(null);
++  const [editContractForm, setEditContractForm] = useState({
++    tip: 'asistenta_juridica', numar: '', data: '', onorariu: '', status: 'activ',
++  });
++  const [savingEditContract, setSavingEditContract] = useState(false);
++
+   const handleSaveEdit = async () => {
+     if (editForm.nume.trim().length < 2 || editForm.prenume.trim().length < 2) {
+       toast.error('Numele și prenumele sunt obligatorii (minim 2 caractere).');
+@@ -218,6 +225,44 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+     }
+   };
+ 
++  const startEditContract = (contract: ClientData) => {
++    setEditingContractId(String(contract.id));
++    setEditContractForm({
++      tip: String(contract.tip || 'asistenta_juridica'),
++      numar: String(contract.numar || ''),
++      data: contract.data ? format(new Date(String(contract.data)), 'yyyy-MM-dd') : '',
++      onorariu: contract.onorariu ? String(contract.onorariu) : '',
++      status: String(contract.status || 'activ'),
++    });
++  };
++
++  const handleUpdateContract = async () => {
++    if (!editingContractId) return;
++    setSavingEditContract(true);
++    try {
++      const res = await fetch('/api/contracts', {
++        method: 'PATCH',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({
++          id: editingContractId,
++          tip: editContractForm.tip,
++          numar: editContractForm.numar,
++          data: editContractForm.data,
++          onorariu: editContractForm.onorariu ? Number(editContractForm.onorariu) : null,
++          status: editContractForm.status,
++        }),
++      });
++      if (!res.ok) throw new Error();
++      toast.success('Contract actualizat');
++      setEditingContractId(null);
++      router.refresh();
++    } catch {
++      toast.error('Eroare la actualizarea contractului.');
++    } finally {
++      setSavingEditContract(false);
++    }
++  };
++
+   const toggleReveal = (id: string) => {
+     setRevealedNotes((prev) => {
+       const next = new Set(prev);
+@@ -732,32 +777,85 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
+                 (client.contracts as ClientData[]).map((contract) => (
+                   <Card key={String(contract.id)}>
+                     <CardContent className="p-4">
+-                      <div className="flex items-center justify-between">
+-                        <div className="flex items-center gap-3">
+-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
+-                            <FileCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
++                      {editingContractId === String(contract.id) ? (
++                        <div className="space-y-3">
++                          <div className="grid gap-3 sm:grid-cols-2">
++                            <div className="space-y-1.5">
++                              <Label className="text-xs">Tip contract</Label>
++                              <Select value={editContractForm.tip} onValueChange={(v) => setEditContractForm((f) => ({ ...f, tip: v }))}>
++                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
++                                <SelectContent>
++                                  <SelectItem value="asistenta_juridica">Asistență juridică</SelectItem>
++                                  <SelectItem value="reprezentare">Reprezentare</SelectItem>
++                                  <SelectItem value="consultanta">Consultanță</SelectItem>
++                                  <SelectItem value="abonament">Abonament</SelectItem>
++                                </SelectContent>
++                              </Select>
++                            </div>
++                            <div className="space-y-1.5">
++                              <Label className="text-xs">Număr</Label>
++                              <Input value={editContractForm.numar} onChange={(e) => setEditContractForm((f) => ({ ...f, numar: e.target.value }))} placeholder="12/2024" />
++                            </div>
++                            <div className="space-y-1.5">
++                              <Label className="text-xs">Data</Label>
++                              <Input type="date" value={editContractForm.data} onChange={(e) => setEditContractForm((f) => ({ ...f, data: e.target.value }))} />
++                            </div>
++                            <div className="space-y-1.5">
++                              <Label className="text-xs">Onorariu (lei)</Label>
++                              <Input type="number" value={editContractForm.onorariu} onChange={(e) => setEditContractForm((f) => ({ ...f, onorariu: e.target.value }))} placeholder="15000" />
++                            </div>
++                            <div className="space-y-1.5">
++                              <Label className="text-xs">Status</Label>
++                              <Select value={editContractForm.status} onValueChange={(v) => setEditContractForm((f) => ({ ...f, status: v }))}>
++                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
++                                <SelectContent>
++                                  <SelectItem value="activ">Activ</SelectItem>
++                                  <SelectItem value="expirat">Expirat</SelectItem>
++                                  <SelectItem value="reziliat">Reziliat</SelectItem>
++                                </SelectContent>
++                              </Select>
++                            </div>
+                           </div>
+-                          <div>
+-                            <p className="text-sm font-semibold text-slate-900 dark:text-white capitalize">
+-                              Contract {String(contract.tip).replace('_', ' ')}
+-                            </p>
+-                            <p className="text-xs text-slate-500">
+-                              {contract.numar ? `Nr. ${contract.numar} • ` : ''}
+-                              {contract.data ? format(new Date(String(contract.data)), 'd MMM yyyy', { locale: ro }) : '-'}
+-                            </p>
++                          <div className="flex justify-end gap-2">
++                            <Button variant="outline" size="sm" onClick={() => setEditingContractId(null)}>Anulează</Button>
++                            <Button size="sm" disabled={savingEditContract} onClick={handleUpdateContract} className="bg-indigo-600 hover:bg-indigo-700">
++                              {savingEditContract ? 'Se salvează...' : 'Salvează modificările'}
++                            </Button>
+                           </div>
+                         </div>
+-                        <div className="text-right">
+-                          {!!contract.onorariu && (
+-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+-                              {Number(contract.onorariu).toLocaleString()} lei
+-                            </p>
+-                          )}
+-                          <Badge variant={contract.status === 'activ' ? 'default' : 'secondary'} className={contract.status === 'activ' ? 'bg-emerald-500 text-white' : ''}>
+-                            {String(contract.status)}
+-                          </Badge>
++                      ) : (
++                        <div className="flex items-center justify-between">
++                          <div className="flex items-center gap-3">
++                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
++                              <FileCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
++                            </div>
++                            <div>
++                              <p className="text-sm font-semibold text-slate-900 dark:text-white capitalize">
++                                Contract {String(contract.tip).replace('_', ' ')}
++                              </p>
++                              <p className="text-xs text-slate-500">
++                                {contract.numar ? `Nr. ${contract.numar} • ` : ''}
++                                {contract.data ? format(new Date(String(contract.data)), 'd MMM yyyy', { locale: ro }) : '-'}
++                              </p>
++                            </div>
++                          </div>
++                          <div className="flex items-center gap-3">
++                            <div className="text-right">
++                              {!!contract.onorariu && (
++                                <p className="text-sm font-semibold text-slate-900 dark:text-white">
++                                  {Number(contract.onorariu).toLocaleString()} lei
++                                </p>
++                              )}
++                              <Badge variant={contract.status === 'activ' ? 'default' : 'secondary'} className={contract.status === 'activ' ? 'bg-emerald-500 text-white' : ''}>
++                                {String(contract.status)}
++                              </Badge>
++                            </div>
++                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={() => startEditContract(contract)}>
++                              <Edit2 className="h-3.5 w-3.5 text-slate-500" />
++                            </Button>
++                          </div>
+                         </div>
+-                      </div>
++                      )}
+                     </CardContent>
+                   </Card>
+                 ))
+diff --git a/cabinet-av/src/app/dosare/[id]/case-profile.tsx b/cabinet-av/src/app/dosare/[id]/case-profile.tsx
+index ca95a8b..b5ce52f 100644
+--- a/cabinet-av/src/app/dosare/[id]/case-profile.tsx
++++ b/cabinet-av/src/app/dosare/[id]/case-profile.tsx
+@@ -1,15 +1,39 @@
+ 'use client';
+ 
++import { useState, useEffect } from 'react';
+ import Link from 'next/link';
+ import { Badge } from '@/components/ui/badge';
+ import { Button } from '@/components/ui/button';
++import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+ import { Clock, Edit2, FileText, Scale, Calendar, Plus, AlertTriangle } from 'lucide-react';
+ import { format, differenceInDays } from 'date-fns';
+ import { ro } from 'date-fns/locale';
+ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
++
+ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<string, unknown>, alerts: Record<string, unknown>[] }) {
+   const now = new Date();
+ 
++  const [activeTab, setActiveTab] = useState('detalii');
++
++  const handleTabChange = (value: string) => {
++    setActiveTab(value);
++    if (typeof window !== 'undefined') {
++      const url = new URL(window.location.href);
++      url.searchParams.set('tab', value);
++      window.history.replaceState(window.history.state, '', url.toString());
++    }
++  };
++
++  useEffect(() => {
++    const syncFromUrl = () => {
++      const tab = new URLSearchParams(window.location.search).get('tab') || 'detalii';
++      setActiveTab(tab);
++    };
++    syncFromUrl();
++    window.addEventListener('popstate', syncFromUrl);
++    return () => window.removeEventListener('popstate', syncFromUrl);
++  }, []);
++
+   const getStatusVariant = (stare: string) => {
+     switch (stare) {
+       case 'deschis': return 'default';
+@@ -45,23 +69,23 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
+               {caseData.denumire}
+             </h1>
+             <Badge variant={getStatusVariant(caseData.stare as string) as "default" | "secondary" | "destructive" | "outline"} className={getStatusColor(caseData.stare as string)}>
+-              {caseData.stare.replace('_', ' ')}
++              {(caseData.stare as string).replace('_', ' ')}
+             </Badge>
+           </div>
+           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+             <div className="flex items-center gap-1.5">
+-              <span className="font-semibold text-slate-700 dark:text-slate-300">Număr:</span> 
+-              <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded dark:bg-slate-800">{caseData.numar}</span>
++              <span className="font-semibold text-slate-700 dark:text-slate-300">Număr:</span>
++              <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded dark:bg-slate-800">{caseData.numar as string}</span>
+             </div>
+             <div className="flex items-center gap-1.5">
+-              <span className="font-semibold text-slate-700 dark:text-slate-300">Client:</span> 
++              <span className="font-semibold text-slate-700 dark:text-slate-300">Client:</span>
+               <Link href={`/clienti/${caseData.clientId}`} className="text-indigo-600 hover:underline dark:text-indigo-400 font-medium">
+-                {caseData.client.prenume} {caseData.client.nume}
++                {(caseData.client as Record<string, unknown>).prenume as string} {(caseData.client as Record<string, unknown>).nume as string}
+               </Link>
+             </div>
+             <div className="flex items-center gap-1.5">
+-              <span className="font-semibold text-slate-700 dark:text-slate-300">Instanță:</span> 
+-              {caseData.instanta || '-'}
++              <span className="font-semibold text-slate-700 dark:text-slate-300">Instanță:</span>
++              {(caseData.instanta as string) || '-'}
+             </div>
+           </div>
+         </div>
+@@ -86,9 +110,9 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
+               </h3>
+               <div className="mt-2 space-y-2">
+                 {alerts.map(alert => (
+-                  <div key={alert.id} className="text-sm text-amber-800 dark:text-amber-300">
+-                    <span className="font-medium">{alert.actNormativ} ({alert.articol})</span>: {alert.titlu}
+-                    <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-400/80">{alert.descriere}</p>
++                  <div key={alert.id as string} className="text-sm text-amber-800 dark:text-amber-300">
++                    <span className="font-medium">{alert.actNormativ as string} ({alert.articol as string})</span>: {alert.titlu as string}
++                    <p className="mt-1 text-xs text-amber-700/80 dark:text-amber-400/80">{alert.descriere as string}</p>
+                   </div>
+                 ))}
+               </div>
+@@ -102,145 +126,180 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
+         <CardContent className="p-4 grid grid-cols-2 md:grid-cols-5 gap-4 divide-x divide-slate-200 dark:divide-slate-800">
+           <div className="px-4 first:pl-0 space-y-1">
+             <p className="text-xs font-medium text-slate-500">Tip dosar</p>
+-            <p className="text-sm font-semibold capitalize text-slate-900 dark:text-white">{caseData.tip}</p>
++            <p className="text-sm font-semibold capitalize text-slate-900 dark:text-white">{caseData.tip as string}</p>
+           </div>
+           <div className="px-4 space-y-1">
+             <p className="text-xs font-medium text-slate-500">Judecător</p>
+-            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={caseData.judecator}>{caseData.judecator || '-'}</p>
++            <p className="text-sm font-semibold text-slate-900 dark:text-white truncate" title={caseData.judecator as string}>{(caseData.judecator as string) || '-'}</p>
+           </div>
+           <div className="px-4 space-y-1">
+             <p className="text-xs font-medium text-slate-500">Sumă litigiu</p>
+-            <p className="text-sm font-semibold text-slate-900 dark:text-white">{caseData.sumaLitigiu ? `${caseData.sumaLitigiu.toLocaleString()} MDL` : '-'}</p>
++            <p className="text-sm font-semibold text-slate-900 dark:text-white">{caseData.sumaLitigiu ? `${(caseData.sumaLitigiu as number).toLocaleString()} MDL` : '-'}</p>
+           </div>
+           <div className="px-4 space-y-1">
+             <p className="text-xs font-medium text-slate-500">Data deschiderii</p>
+-            <p className="text-sm font-semibold text-slate-900 dark:text-white">{format(new Date(caseData.createdAt), 'dd.MM.yyyy')}</p>
++            <p className="text-sm font-semibold text-slate-900 dark:text-white">{format(new Date(caseData.createdAt as string), 'dd.MM.yyyy')}</p>
+           </div>
+           <div className="px-4 space-y-1">
+             <p className="text-xs font-medium text-slate-500">Documente</p>
+-            <p className="text-sm font-semibold text-slate-900 dark:text-white">{caseData.documents.length}</p>
++            <p className="text-sm font-semibold text-slate-900 dark:text-white">{(caseData.documents as unknown[]).length}</p>
+           </div>
+         </CardContent>
+       </Card>
+ 
+-      {/* Layout 2 coloane */}
+-      <div className="grid gap-6 lg:grid-cols-3">
+-        {/* Stânga: Arbore documente + Timeline (2 col) */}
+-        <div className="lg:col-span-2 space-y-6">
+-          <Card>
+-            <CardHeader className="flex flex-row items-center justify-between">
+-              <CardTitle className="text-lg">Documente recente</CardTitle>
+-              <Button variant="ghost" size="sm" className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400">Vezi toate</Button>
+-            </CardHeader>
+-            <CardContent>
+-              {caseData.documents.length === 0 ? (
+-                <p className="text-sm text-slate-500 py-4 text-center">Nu există documente în acest dosar.</p>
+-              ) : (
+-                <div className="space-y-3">
+-                  {Array.isArray(caseData.documents) && caseData.documents.slice(0, 5).map((doc: Record<string, unknown>) => (
+-                    <div key={doc.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer" onClick={() => {/* Navigation to doc */}}>
+-                      <div className="mt-1 flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-slate-500 dark:bg-slate-800">
+-                        <FileText className="h-4 w-4" />
++      {/* Tabs */}
++      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
++        <TabsList className="h-12 w-full justify-start overflow-x-auto rounded-none border-b border-slate-200 bg-transparent p-0 dark:border-slate-800">
++          {[
++            { value: 'detalii', label: 'Detalii' },
++            { value: 'documente', label: `Documente (${(caseData.documents as unknown[]).length})` },
++            { value: 'termene', label: `Termene (${(caseData.deadlines as unknown[]).length})` },
++          ].map((tab) => (
++            <TabsTrigger
++              key={tab.value}
++              value={tab.value}
++              className="rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-indigo-600 data-[state=active]:bg-transparent data-[state=active]:text-indigo-600 data-[state=active]:shadow-none dark:data-[state=active]:border-indigo-500 dark:data-[state=active]:text-indigo-400"
++            >
++              {tab.label}
++            </TabsTrigger>
++          ))}
++        </TabsList>
++
++        <div className="mt-6">
++          {/* TAB: Detalii */}
++          <TabsContent value="detalii" className="mt-0 space-y-6">
++            <div className="grid gap-6 lg:grid-cols-3">
++              <div className="lg:col-span-2 space-y-6">
++                <Card>
++                  <CardHeader>
++                    <CardTitle className="text-lg">Descriere și Fapte Cheie</CardTitle>
++                  </CardHeader>
++                  <CardContent>
++                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
++                      {(caseData.descriere as string) || 'Nicio descriere adăugată.'}
++                    </p>
++                    {caseData.articole && (
++                      <div className="mt-4">
++                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Articole relevante</h4>
++                        <div className="flex flex-wrap gap-2">
++                          {JSON.parse(caseData.articole as string).map((art: string, i: number) => (
++                            <Badge key={i} variant="outline" className="bg-slate-50 dark:bg-slate-900">{art}</Badge>
++                          ))}
++                        </div>
+                       </div>
+-                      <div className="flex-1 space-y-1">
+-                        <p className="text-sm font-medium text-slate-900 dark:text-white leading-none">{doc.nume}</p>
+-                        <p className="text-xs text-slate-500">{format(new Date(doc.createdAt), 'dd MMM yyyy, HH:mm', { locale: ro })} • {doc.tip}</p>
++                    )}
++                  </CardContent>
++                </Card>
++              </div>
++
++              <div className="space-y-6">
++                <Card>
++                  <CardHeader className="pb-3">
++                    <CardTitle className="text-lg flex items-center gap-2">
++                      <Clock className="h-5 w-5 text-slate-500" /> Acțiuni Rapide
++                    </CardTitle>
++                  </CardHeader>
++                  <CardContent className="space-y-2">
++                    <Button className="w-full justify-start text-left" variant="outline">
++                      <FileText className="mr-2 h-4 w-4 text-indigo-600" /> Crează Document AI
++                    </Button>
++                    <Button className="w-full justify-start text-left" variant="outline">
++                      <Clock className="mr-2 h-4 w-4 text-emerald-600" /> Înregistrează Timp
++                    </Button>
++                    <Button className="w-full justify-start text-left" variant="outline">
++                      <Edit2 className="mr-2 h-4 w-4 text-amber-600" /> Adaugă Notiță
++                    </Button>
++                    <Button className="w-full justify-start text-left" variant="outline">
++                      <Scale className="mr-2 h-4 w-4 text-blue-600" /> Cercetare AI
++                    </Button>
++                  </CardContent>
++                </Card>
++              </div>
++            </div>
++          </TabsContent>
++
++          {/* TAB: Documente */}
++          <TabsContent value="documente" className="mt-0">
++            <Card>
++              <CardHeader className="flex flex-row items-center justify-between">
++                <CardTitle className="text-lg">Documente dosar</CardTitle>
++                <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700">
++                  <Plus className="h-4 w-4" /> Document nou
++                </Button>
++              </CardHeader>
++              <CardContent>
++                {(caseData.documents as unknown[]).length === 0 ? (
++                  <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center dark:border-slate-700">
++                    <FileText className="mx-auto h-8 w-8 text-slate-400" />
++                    <p className="mt-2 text-sm text-slate-500">Nu există documente în acest dosar.</p>
++                  </div>
++                ) : (
++                  <div className="space-y-3">
++                    {Array.isArray(caseData.documents) && (caseData.documents as Record<string, unknown>[]).map((doc) => (
++                      <div key={doc.id as string} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer">
++                        <div className="mt-1 flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-slate-500 dark:bg-slate-800">
++                          <FileText className="h-4 w-4" />
++                        </div>
++                        <div className="flex-1 space-y-1">
++                          <p className="text-sm font-medium text-slate-900 dark:text-white leading-none">{doc.nume as string}</p>
++                          <p className="text-xs text-slate-500">{format(new Date(doc.createdAt as string), 'dd MMM yyyy, HH:mm', { locale: ro })} • {doc.tip as string}</p>
++                        </div>
+                       </div>
+-                    </div>
+-                  ))}
+-                </div>
+-              )}
+-            </CardContent>
+-          </Card>
+-          
+-          <Card>
+-            <CardHeader>
+-              <CardTitle className="text-lg">Descriere și Fapte Cheie</CardTitle>
+-            </CardHeader>
+-            <CardContent>
+-              <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">
+-                {caseData.descriere || 'Nicio descriere adăugată.'}
+-              </p>
+-              {caseData.articole && (
+-                <div className="mt-4">
+-                  <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Articole relevante</h4>
+-                  <div className="flex flex-wrap gap-2">
+-                    {JSON.parse(caseData.articole).map((art: string, i: number) => (
+-                      <Badge key={i} variant="outline" className="bg-slate-50 dark:bg-slate-900">{art}</Badge>
+                     ))}
+                   </div>
+-                </div>
+-              )}
+-            </CardContent>
+-          </Card>
+-        </div>
++                )}
++              </CardContent>
++            </Card>
++          </TabsContent>
+ 
+-        {/* Dreapta: Termene + Quick Actions (1 col) */}
+-        <div className="space-y-6">
+-          <Card>
+-            <CardHeader className="pb-3">
+-              <CardTitle className="text-lg flex items-center gap-2">
+-                <Calendar className="h-5 w-5 text-slate-500" /> Termene
+-              </CardTitle>
+-            </CardHeader>
+-            <CardContent>
+-              {caseData.deadlines.length === 0 ? (
+-                <p className="text-sm text-slate-500">Niciun termen adăugat.</p>
+-              ) : (
+-                <div className="space-y-4">
+-                  {Array.isArray(caseData.deadlines) && caseData.deadlines.map((deadline: Record<string, unknown>) => {
+-                    const daysLeft = differenceInDays(new Date(deadline.data), now);
+-                    const isPast = daysLeft < 0;
+-                    const isUrgent = daysLeft >= 0 && daysLeft <= 5;
+-                    
+-                    return (
+-                      <div key={deadline.id} className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-800 pb-1">
+-                        <div className={`absolute -left-[5px] top-1.5 h-2 w-2 rounded-full ${isPast ? 'bg-slate-400' : isUrgent ? 'bg-red-500' : 'bg-indigo-500'}`} />
+-                        <p className={`text-sm font-medium ${isPast ? 'text-slate-500 line-through' : 'text-slate-900 dark:text-white'}`}>
+-                          {deadline.descriere}
+-                        </p>
+-                        <div className="flex items-center gap-2 mt-1">
+-                          <span className="text-xs text-slate-500 font-medium">{format(new Date(deadline.data), 'dd MMMM yyyy', { locale: ro })}</span>
+-                          {!isPast && (
+-                            <Badge variant={isUrgent ? 'destructive' : 'secondary'} className="text-[10px] h-4 px-1">
+-                              {daysLeft === 0 ? 'Azi' : `În ${daysLeft} zile`}
+-                            </Badge>
+-                          )}
++          {/* TAB: Termene */}
++          <TabsContent value="termene" className="mt-0">
++            <Card>
++              <CardHeader className="flex flex-row items-center justify-between pb-3">
++                <CardTitle className="text-lg flex items-center gap-2">
++                  <Calendar className="h-5 w-5 text-slate-500" /> Termene dosar
++                </CardTitle>
++                <Button size="sm" variant="outline">
++                  <Plus className="mr-2 h-3 w-3" /> Adaugă termen
++                </Button>
++              </CardHeader>
++              <CardContent>
++                {(caseData.deadlines as unknown[]).length === 0 ? (
++                  <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center dark:border-slate-700">
++                    <Calendar className="mx-auto h-8 w-8 text-slate-400" />
++                    <p className="mt-2 text-sm text-slate-500">Niciun termen adăugat.</p>
++                  </div>
++                ) : (
++                  <div className="space-y-4">
++                    {Array.isArray(caseData.deadlines) && (caseData.deadlines as Record<string, unknown>[]).map((deadline) => {
++                      const daysLeft = differenceInDays(new Date(deadline.data as string), now);
++                      const isPast = daysLeft < 0;
++                      const isUrgent = daysLeft >= 0 && daysLeft <= 5;
++
++                      return (
++                        <div key={deadline.id as string} className="relative pl-4 border-l-2 border-slate-200 dark:border-slate-800 pb-1">
++                          <div className={`absolute -left-[5px] top-1.5 h-2 w-2 rounded-full ${isPast ? 'bg-slate-400' : isUrgent ? 'bg-red-500' : 'bg-indigo-500'}`} />
++                          <p className={`text-sm font-medium ${isPast ? 'text-slate-500 line-through' : 'text-slate-900 dark:text-white'}`}>
++                            {deadline.descriere as string}
++                          </p>
++                          <div className="flex items-center gap-2 mt-1">
++                            <span className="text-xs text-slate-500 font-medium">{format(new Date(deadline.data as string), 'dd MMMM yyyy', { locale: ro })}</span>
++                            {!isPast && (
++                              <Badge variant={isUrgent ? 'destructive' : 'secondary'} className="text-[10px] h-4 px-1">
++                                {daysLeft === 0 ? 'Azi' : `În ${daysLeft} zile`}
++                              </Badge>
++                            )}
++                          </div>
+                         </div>
+-                      </div>
+-                    );
+-                  })}
+-                </div>
+-              )}
+-              <Button variant="outline" className="w-full mt-4" size="sm">
+-                <Plus className="mr-2 h-3 w-3" /> Adaugă termen
+-              </Button>
+-            </CardContent>
+-          </Card>
+-          
+-          <Card>
+-            <CardHeader className="pb-3">
+-              <CardTitle className="text-lg flex items-center gap-2">
+-                <Clock className="h-5 w-5 text-slate-500" /> Acțiuni Rapide
+-              </CardTitle>
+-            </CardHeader>
+-            <CardContent className="space-y-2">
+-              <Button className="w-full justify-start text-left" variant="outline">
+-                <FileText className="mr-2 h-4 w-4 text-indigo-600" /> Crează Document AI
+-              </Button>
+-              <Button className="w-full justify-start text-left" variant="outline">
+-                <Clock className="mr-2 h-4 w-4 text-emerald-600" /> Înregistrează Timp
+-              </Button>
+-              <Button className="w-full justify-start text-left" variant="outline">
+-                <Edit2 className="mr-2 h-4 w-4 text-amber-600" /> Adaugă Notiță
+-              </Button>
+-              <Button className="w-full justify-start text-left" variant="outline">
+-                <Scale className="mr-2 h-4 w-4 text-blue-600" /> Cercetare AI
+-              </Button>
+-            </CardContent>
+-          </Card>
++                      );
++                    })}
++                  </div>
++                )}
++              </CardContent>
++            </Card>
++          </TabsContent>
+         </div>
+-      </div>
++      </Tabs>
+     </div>
+   );
+ }
+-- 
+2.43.0
+

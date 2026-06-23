@@ -165,3 +165,91 @@ span[data-reason]:hover {
   background-color: #14532d;
   border-bottom-color: #16a34a;
 }
+
+/* ===========================================================================
+   Document juridic — formatare structurată (editor TipTap + preview generare)
+   Asigură că documentele au structură clară: titluri, secțiuni, liste, tabele.
+   =========================================================================== */
+.ProseMirror,
+.legal-document {
+  font-family: 'Times New Roman', Georgia, serif;
+  font-size: 12pt;
+  line-height: 1.6;
+  color: #111;
+}
+.dark .ProseMirror,
+.dark .legal-document {
+  color: #e2e8f0;
+}
+
+/* Titlul principal — centrat, majuscule */
+.ProseMirror h1,
+.legal-document h1 {
+  text-align: center;
+  text-transform: uppercase;
+  font-size: 16pt;
+  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+  letter-spacing: 0.02em;
+}
+/* Subtitlu sub titlu — centrat */
+.ProseMirror h2,
+.legal-document h2 {
+  text-align: center;
+  font-size: 12pt;
+  font-weight: 600;
+  margin: 0 0 1.5rem 0;
+}
+/* Secțiuni numerotate */
+.ProseMirror h3,
+.legal-document h3 {
+  font-size: 12pt;
+  font-weight: 700;
+  margin: 1.5rem 0 0.5rem 0;
+}
+/* Paragrafe — justify, cu spațiere clară */
+.ProseMirror p,
+.legal-document p {
+  text-align: justify;
+  margin: 0 0 0.75rem 0;
+}
+/* Liste — numerotări și marcatori vizibili */
+.ProseMirror ol,
+.ProseMirror ul,
+.legal-document ol,
+.legal-document ul {
+  margin: 0 0 0.75rem 0;
+  padding-left: 1.75rem;
+}
+.ProseMirror ol { list-style: decimal; }
+.ProseMirror ul { list-style: disc; }
+.ProseMirror li,
+.legal-document li {
+  margin: 0 0 0.35rem 0;
+  text-align: justify;
+}
+/* Tabele — borduri clare */
+.ProseMirror table,
+.legal-document table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75rem 0 1rem 0;
+}
+.ProseMirror th,
+.ProseMirror td,
+.legal-document th,
+.legal-document td {
+  border: 1px solid #94a3b8;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.ProseMirror th,
+.legal-document th {
+  background: #f1f5f9;
+  font-weight: 700;
+}
+.dark .ProseMirror th,
+.dark .legal-document th {
+  background: #1e293b;
+}
