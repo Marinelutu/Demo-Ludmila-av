@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, X, ChevronRight, FileText } from 'lucide-react';
+import { AlertTriangle, ChevronRight, FileText, Check } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 interface Alert {
   id: string;
@@ -18,8 +19,40 @@ interface Alert {
 
 export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
   const [open, setOpen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [marking, setMarking] = useState<string | null>(null);
+
+  const visibleAlerts = alerts.filter(a => !readIds.has(a.id));
+
+  const markAsRead = async (id: string) => {
+    setMarking(id);
+    // Optimistic UI: ascundem imediat alerta
+    setReadIds(prev => new Set(prev).add(id));
+    try {
+      const res = await fetch('/api/alerts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status: 'citita' }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Alertă marcată ca citită');
+    } catch {
+      // Rollback dacă persistarea eșuează
+      setReadIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      toast.error('Nu s-a putut marca alerta. Încercați din nou.');
+    } finally {
+      setMarking(null);
+    }
+  };
 
   if (alerts.length === 0) return null;
+
+  // Toate alertele au fost citite: ascundem complet bannerul
+  if (visibleAlerts.length === 0) return null;
 
   return (
     <>
@@ -31,10 +64,10 @@ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
           <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600 dark:text-amber-500" />
           <div className="flex-1">
             <h3 className="font-semibold text-amber-900 dark:text-amber-400">
-              Atenție: {alerts.length} modificări legislative necesită atenția dvs.
+              Atenție: {visibleAlerts.length} modificări legislative necesită atenția dvs.
             </h3>
             <div className="mt-1 space-y-1">
-              {alerts.map(alert => (
+              {visibleAlerts.map(alert => (
                 <p key={alert.id} className="text-sm text-amber-800 dark:text-amber-300">
                   <span className="font-medium">{alert.actNormativ}</span>: {alert.titlu}
                 </p>
@@ -55,7 +88,7 @@ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
           </SheetHeader>
 
           <div className="mt-6 space-y-6 overflow-y-auto">
-            {alerts.map(alert => {
+            {visibleAlerts.map(alert => {
               const affectedIds: string[] = JSON.parse(alert.affectedCaseIds || '[]');
               return (
                 <div key={alert.id} className="rounded-xl border border-amber-200 bg-amber-50/50 p-4 dark:border-amber-900/30 dark:bg-amber-950/20">
@@ -105,9 +138,12 @@ export function LegislativeAlertsDrawer({ alerts }: { alerts: Alert[] }) {
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 border-amber-300 text-amber-700 hover:bg-amber-100 text-xs dark:border-amber-700 dark:text-amber-400"
+                      disabled={marking === alert.id}
+                      onClick={() => markAsRead(alert.id)}
+                      className="h-7 border-amber-300 text-amber-700 hover:bg-amber-100 text-xs dark:border-amber-700 dark:text-amber-400 gap-1"
                     >
-                      Marchează citită
+                      <Check className="h-3 w-3" />
+                      {marking === alert.id ? 'Se marchează...' : 'Marchează citită'}
                     </Button>
                   </div>
                 </div>
