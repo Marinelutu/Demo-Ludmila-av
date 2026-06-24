@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { detectTemplateId, generateDocument, templateTextToHtml } from '@/lib/document-templates';
 
 const SYSTEM_PROMPT = `Ești un asistent juridic specializat în dreptul Republicii Moldova. Generezi documente juridice profesionale în limba română, conform legislației moldovenești în vigoare.
 
@@ -71,6 +72,37 @@ export async function POST(req: NextRequest) {
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const { tip, clientDetails, caseDetails, descriere } = await req.json();
+
+  // Template path: if the requested type maps to a known template, use
+  // deterministic slot-extraction + render instead of free-form generation.
+  const templateId = detectTemplateId(`${tip || ''} ${descriere || ''}`);
+  if (templateId) {
+    try {
+      const context = [
+        clientDetails ? `Client: ${[clientDetails.prenume, clientDetails.nume].filter(Boolean).join(' ')}` : '',
+        clientDetails?.idnp ? `IDNP: ${clientDetails.idnp}` : '',
+        clientDetails?.adresa ? `Domiciliu: ${clientDetails.adresa}` : '',
+        clientDetails?.telefon ? `Telefon: ${clientDetails.telefon}` : '',
+        clientDetails?.email ? `Email: ${clientDetails.email}` : '',
+        caseDetails ? `Dosar: ${caseDetails.numar || ''} — ${caseDetails.denumire || ''} (instanța: ${caseDetails.instanta || 'necunoscută'}${caseDetails.judecator ? `, judecător: ${caseDetails.judecator}` : ''})` : '',
+        caseDetails?.descriere ? `Descriere dosar: ${caseDetails.descriere}` : '',
+        descriere ? `Context suplimentar: ${descriere}` : '',
+      ].filter(Boolean).join('\n');
+
+      const { text } = await generateDocument(templateId, context, anthropic);
+      const html = templateTextToHtml(text);
+      const payload = `data: ${JSON.stringify({ text: html })}\n\ndata: [DONE]\n\n`;
+      return new Response(payload, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          Connection: 'keep-alive',
+        },
+      });
+    } catch (err) {
+      console.error('template generation failed, falling back to free-form:', err);
+    }
+  }
 
   const userPrompt = `Tip document: ${tip || 'Cerere'}
 Client: ${clientDetails ? `${clientDetails.prenume} ${clientDetails.nume}, IDNP ${clientDetails.idnp || 'nespecificat'}, adresa ${clientDetails.adresa || 'nespecificată'}` : 'Nespecificat'}
