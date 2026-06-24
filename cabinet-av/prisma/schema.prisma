@@ -101,6 +101,9 @@ model Email {
   status          String    @default("nou")
   hasAttachments  Boolean   @default(false)
   attachments     String?
+  relevant        Boolean   @default(true)
+  categorie       String?
+  aiProcessedAt   DateTime?
 }
 
 model Consultation {
