@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Edit2, Folder, Mail, Phone, FileText, Mic, MicOff, Clock, CheckCircle2,
-  AlertCircle, FileCheck, StickyNote, Lock,
+  AlertCircle, FileCheck, StickyNote, Lock, Plus, Eye, EyeOff, Sparkles,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
@@ -18,6 +17,17 @@ import { toast } from 'sonner';
 import { OcrSplitView } from '@/components/ocr/ocr-split-view';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScanLine } from 'lucide-react';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { GenerateDocumentModal } from '@/components/editor/generate-document-modal';
 
 type ClientData = Record<string, unknown>;
 
@@ -36,19 +46,231 @@ interface ConsultationResult {
 
 export function ClientProfileClient({ client }: { client: ClientData }) {
   const router = useRouter();
+
+  // Tab sincronizat cu URL-ul, ca butonul "înapoi" din browser să revină pe tab-ul corect.
+  // Inițializăm cu 'informatii' (la fel ca SSR) și citim tab-ul din URL după montare,
+  // pentru a evita nepotrivirile de hidratare.
   const [activeTab, setActiveTab] = useState('informatii');
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', value);
+      window.history.replaceState(window.history.state, '', url.toString());
+    }
+  };
+
+  // La montare și la navigare înapoi/înainte din browser (popstate), preluăm tab-ul din URL
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const tab = new URLSearchParams(window.location.search).get('tab') || 'informatii';
+      setActiveTab(tab);
+    };
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
 
   // Consultation state
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [consultResult, setConsultResult] = useState<ConsultationResult | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [savingConsult, setSavingConsult] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // OCR sheet
   const [ocrOpen, setOcrOpen] = useState(false);
+
+  // Dialog: editare client
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    nume: String(client.nume || ''),
+    prenume: String(client.prenume || ''),
+    idnp: String(client.idnp || ''),
+    telefon: String(client.telefon || ''),
+    email: String(client.email || ''),
+    adresa: String(client.adresa || ''),
+    note: String(client.note || ''),
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Dialog: dosar nou
+  const [caseOpen, setCaseOpen] = useState(false);
+  const [caseForm, setCaseForm] = useState({
+    numar: '', denumire: '', tip: 'civil', instanta: '', judecator: '', descriere: '',
+  });
+  const [savingCase, setSavingCase] = useState(false);
+
+  // Document nou (modal de generare)
+  const [docModalOpen, setDocModalOpen] = useState(false);
+
+  // Notițe: dezvăluire confidențiale + adăugare inline
+  const [revealedNotes, setRevealedNotes] = useState<Set<string>>(new Set());
+  const [noteFormOpen, setNoteFormOpen] = useState(false);
+  const [noteForm, setNoteForm] = useState({ continut: '', confidential: false });
+  const [savingNote, setSavingNote] = useState(false);
+
+  // Contracte: adăugare inline
+  const [contractFormOpen, setContractFormOpen] = useState(false);
+  const [contractForm, setContractForm] = useState({
+    tip: 'asistenta_juridica', numar: '', data: '', onorariu: '',
+  });
+  const [savingContract, setSavingContract] = useState(false);
+
+  // Contracte: editare inline
+  const [editingContractId, setEditingContractId] = useState<string | null>(null);
+  const [editContractForm, setEditContractForm] = useState({
+    tip: 'asistenta_juridica', numar: '', data: '', onorariu: '', status: 'activ',
+  });
+  const [savingEditContract, setSavingEditContract] = useState(false);
+
+  const handleSaveEdit = async () => {
+    if (editForm.nume.trim().length < 2 || editForm.prenume.trim().length < 2) {
+      toast.error('Numele și prenumele sunt obligatorii (minim 2 caractere).');
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: client.id, ...editForm }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Client actualizat');
+      setEditOpen(false);
+      router.refresh();
+    } catch {
+      toast.error('Eroare la actualizarea clientului.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleSaveCase = async () => {
+    if (!caseForm.numar.trim() || caseForm.denumire.trim().length < 2) {
+      toast.error('Numărul și denumirea dosarului sunt obligatorii.');
+      return;
+    }
+    setSavingCase(true);
+    try {
+      const res = await fetch('/api/cases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: client.id, ...caseForm }),
+      });
+      if (!res.ok) throw new Error();
+      const newCase = await res.json();
+      toast.success('Dosar creat');
+      setCaseOpen(false);
+      router.push(`/dosare/${newCase.id}`);
+    } catch {
+      toast.error('Eroare la crearea dosarului.');
+    } finally {
+      setSavingCase(false);
+    }
+  };
+
+  const handleSaveNote = async () => {
+    if (!noteForm.continut.trim()) {
+      toast.error('Conținutul notiței este obligatoriu.');
+      return;
+    }
+    setSavingNote(true);
+    try {
+      const res = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: client.id, ...noteForm }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Notiță adăugată');
+      setNoteForm({ continut: '', confidential: false });
+      setNoteFormOpen(false);
+      router.refresh();
+    } catch {
+      toast.error('Eroare la salvarea notiței.');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const handleSaveContract = async () => {
+    setSavingContract(true);
+    try {
+      const res = await fetch('/api/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: client.id,
+          tip: contractForm.tip,
+          numar: contractForm.numar,
+          data: contractForm.data,
+          onorariu: contractForm.onorariu ? Number(contractForm.onorariu) : null,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Contract adăugat');
+      setContractForm({ tip: 'asistenta_juridica', numar: '', data: '', onorariu: '' });
+      setContractFormOpen(false);
+      router.refresh();
+    } catch {
+      toast.error('Eroare la salvarea contractului.');
+    } finally {
+      setSavingContract(false);
+    }
+  };
+
+  const startEditContract = (contract: ClientData) => {
+    setEditingContractId(String(contract.id));
+    setEditContractForm({
+      tip: String(contract.tip || 'asistenta_juridica'),
+      numar: String(contract.numar || ''),
+      data: contract.data ? format(new Date(String(contract.data)), 'yyyy-MM-dd') : '',
+      onorariu: contract.onorariu ? String(contract.onorariu) : '',
+      status: String(contract.status || 'activ'),
+    });
+  };
+
+  const handleUpdateContract = async () => {
+    if (!editingContractId) return;
+    setSavingEditContract(true);
+    try {
+      const res = await fetch('/api/contracts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingContractId,
+          tip: editContractForm.tip,
+          numar: editContractForm.numar,
+          data: editContractForm.data,
+          onorariu: editContractForm.onorariu ? Number(editContractForm.onorariu) : null,
+          status: editContractForm.status,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Contract actualizat');
+      setEditingContractId(null);
+      router.refresh();
+    } catch {
+      toast.error('Eroare la actualizarea contractului.');
+    } finally {
+      setSavingEditContract(false);
+    }
+  };
+
+  const toggleReveal = (id: string) => {
+    setRevealedNotes((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const getInitials = (nume: string, prenume: string) =>
     `${prenume?.charAt(0) || ''}${nume?.charAt(0) || ''}`.toUpperCase();
@@ -107,6 +329,31 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
     return `${m}:${s}`;
   };
 
+  const handleSaveConsultation = async () => {
+    if (!consultResult) return;
+    setSavingConsult(true);
+    try {
+      const res = await fetch('/api/consultations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: client.id,
+          transcript: consultResult.transcript,
+          structuredData: consultResult.structuredData,
+          durata: recordingTime,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success('Consultație salvată la profil');
+      setConsultResult(null);
+      router.refresh();
+    } catch {
+      toast.error('Eroare la salvarea consultației.');
+    } finally {
+      setSavingConsult(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -146,17 +393,17 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
           <Button variant="outline" className="gap-2" onClick={() => setOcrOpen(true)}>
             <ScanLine className="h-4 w-4" /> OCR
           </Button>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2" onClick={() => setEditOpen(true)}>
             <Edit2 className="h-4 w-4" /> Editează
           </Button>
-          <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+          <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setCaseOpen(true)}>
             <Folder className="h-4 w-4" /> Dosar Nou
           </Button>
         </div>
       </div>
 
       {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="h-12 w-full justify-start overflow-x-auto rounded-none border-b border-slate-200 bg-transparent p-0 dark:border-slate-800">
           {[
             { value: 'informatii', label: 'Informații' },
@@ -241,7 +488,15 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
           </TabsContent>
 
           {/* TAB: Documente */}
-          <TabsContent value="documente" className="mt-0">
+          <TabsContent value="documente" className="mt-0 space-y-4">
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="outline" size="sm" className="gap-2" onClick={() => setOcrOpen(true)}>
+                <ScanLine className="h-4 w-4" /> Scanează (OCR)
+              </Button>
+              <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setDocModalOpen(true)}>
+                <Sparkles className="h-4 w-4" /> Document nou
+              </Button>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {Array.isArray(client.documents) && (client.documents as ClientData[]).map((doc) => (
                 <div
@@ -371,8 +626,8 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
                       )}
 
                       <div className="flex gap-2">
-                        <Button className="bg-indigo-600 hover:bg-indigo-700">
-                          Adaugă consultație la profil
+                        <Button className="bg-indigo-600 hover:bg-indigo-700" disabled={savingConsult} onClick={handleSaveConsultation}>
+                          {savingConsult ? 'Se salvează...' : 'Adaugă consultație la profil'}
                         </Button>
                         <Button variant="outline" onClick={() => setConsultResult(null)}>
                           Înregistrare nouă
@@ -473,36 +728,134 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
           {/* TAB: Contracte */}
           <TabsContent value="contracte" className="mt-0">
             <div className="space-y-3">
+              <div className="flex items-center justify-end">
+                <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setContractFormOpen((v) => !v)}>
+                  <Plus className="h-4 w-4" /> Contract nou
+                </Button>
+              </div>
+
+              {contractFormOpen && (
+                <Card className="border-indigo-200 dark:border-indigo-800">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Tip contract</Label>
+                        <Select value={contractForm.tip} onValueChange={(v) => setContractForm((f) => ({ ...f, tip: v }))}>
+                          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="asistenta_juridica">Asistență juridică</SelectItem>
+                            <SelectItem value="reprezentare">Reprezentare</SelectItem>
+                            <SelectItem value="consultanta">Consultanță</SelectItem>
+                            <SelectItem value="abonament">Abonament</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Număr</Label>
+                        <Input value={contractForm.numar} onChange={(e) => setContractForm((f) => ({ ...f, numar: e.target.value }))} placeholder="12/2024" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Data</Label>
+                        <Input type="date" value={contractForm.data} onChange={(e) => setContractForm((f) => ({ ...f, data: e.target.value }))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Onorariu (lei)</Label>
+                        <Input type="number" value={contractForm.onorariu} onChange={(e) => setContractForm((f) => ({ ...f, onorariu: e.target.value }))} placeholder="15000" />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setContractFormOpen(false)}>Anulează</Button>
+                      <Button size="sm" disabled={savingContract} onClick={handleSaveContract} className="bg-indigo-600 hover:bg-indigo-700">
+                        {savingContract ? 'Se salvează...' : 'Salvează contract'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {Array.isArray(client.contracts) && (client.contracts as ClientData[]).length > 0 ? (
                 (client.contracts as ClientData[]).map((contract) => (
                   <Card key={String(contract.id)}>
                     <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
-                            <FileCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                      {editingContractId === String(contract.id) ? (
+                        <div className="space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Tip contract</Label>
+                              <Select value={editContractForm.tip} onValueChange={(v) => setEditContractForm((f) => ({ ...f, tip: v }))}>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="asistenta_juridica">Asistență juridică</SelectItem>
+                                  <SelectItem value="reprezentare">Reprezentare</SelectItem>
+                                  <SelectItem value="consultanta">Consultanță</SelectItem>
+                                  <SelectItem value="abonament">Abonament</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Număr</Label>
+                              <Input value={editContractForm.numar} onChange={(e) => setEditContractForm((f) => ({ ...f, numar: e.target.value }))} placeholder="12/2024" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Data</Label>
+                              <Input type="date" value={editContractForm.data} onChange={(e) => setEditContractForm((f) => ({ ...f, data: e.target.value }))} />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Onorariu (lei)</Label>
+                              <Input type="number" value={editContractForm.onorariu} onChange={(e) => setEditContractForm((f) => ({ ...f, onorariu: e.target.value }))} placeholder="15000" />
+                            </div>
+                            <div className="space-y-1.5">
+                              <Label className="text-xs">Status</Label>
+                              <Select value={editContractForm.status} onValueChange={(v) => setEditContractForm((f) => ({ ...f, status: v }))}>
+                                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="activ">Activ</SelectItem>
+                                  <SelectItem value="expirat">Expirat</SelectItem>
+                                  <SelectItem value="reziliat">Reziliat</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white capitalize">
-                              Contract {String(contract.tip).replace('_', ' ')}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {contract.numar ? `Nr. ${contract.numar} • ` : ''}
-                              {contract.data ? format(new Date(String(contract.data)), 'd MMM yyyy', { locale: ro }) : '-'}
-                            </p>
+                          <div className="flex justify-end gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setEditingContractId(null)}>Anulează</Button>
+                            <Button size="sm" disabled={savingEditContract} onClick={handleUpdateContract} className="bg-indigo-600 hover:bg-indigo-700">
+                              {savingEditContract ? 'Se salvează...' : 'Salvează modificările'}
+                            </Button>
                           </div>
                         </div>
-                        <div className="text-right">
-                          {!!contract.onorariu && (
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {Number(contract.onorariu).toLocaleString()} lei
-                            </p>
-                          )}
-                          <Badge variant={contract.status === 'activ' ? 'default' : 'secondary'} className={contract.status === 'activ' ? 'bg-emerald-500 text-white' : ''}>
-                            {String(contract.status)}
-                          </Badge>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 dark:bg-indigo-900/40">
+                              <FileCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white capitalize">
+                                Contract {String(contract.tip).replace('_', ' ')}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {contract.numar ? `Nr. ${contract.numar} • ` : ''}
+                                {contract.data ? format(new Date(String(contract.data)), 'd MMM yyyy', { locale: ro }) : '-'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              {!!contract.onorariu && (
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {Number(contract.onorariu).toLocaleString()} lei
+                                </p>
+                              )}
+                              <Badge variant={contract.status === 'activ' ? 'default' : 'secondary'} className={contract.status === 'activ' ? 'bg-emerald-500 text-white' : ''}>
+                                {String(contract.status)}
+                              </Badge>
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 shrink-0" onClick={() => startEditContract(contract)}>
+                              <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </CardContent>
                   </Card>
                 ))
@@ -510,7 +863,7 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
                 <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
                   <FileCheck className="mx-auto h-8 w-8 text-slate-400" />
                   <p className="mt-2 text-sm text-slate-500">Niciun contract. Adăugați primul contract.</p>
-                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm">+ Contract nou</Button>
+                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm" onClick={() => setContractFormOpen(true)}>+ Contract nou</Button>
                 </div>
               )}
             </div>
@@ -519,6 +872,47 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
           {/* TAB: Notițe */}
           <TabsContent value="notite" className="mt-0">
             <div className="space-y-3">
+              <div className="flex items-center justify-end">
+                <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setNoteFormOpen((v) => !v)}>
+                  <Plus className="h-4 w-4" /> Notiță nouă
+                </Button>
+              </div>
+
+              {noteFormOpen && (
+                <Card className="border-indigo-200 dark:border-indigo-800">
+                  <CardContent className="p-4 space-y-3">
+                    <Textarea
+                      value={noteForm.continut}
+                      onChange={(e) => setNoteForm((f) => ({ ...f, continut: e.target.value }))}
+                      placeholder="Scrieți notița aici..."
+                      className="min-h-[90px]"
+                    />
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                        <Switch
+                          checked={noteForm.confidential}
+                          onCheckedChange={(v) => setNoteForm((f) => ({ ...f, confidential: v }))}
+                        />
+                        <span className="flex items-center gap-1">
+                          <Lock className="h-3.5 w-3.5 text-amber-600" /> Notiță confidențială
+                        </span>
+                      </label>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setNoteFormOpen(false)}>Anulează</Button>
+                        <Button size="sm" disabled={savingNote} onClick={handleSaveNote} className="bg-indigo-600 hover:bg-indigo-700">
+                          {savingNote ? 'Se salvează...' : 'Salvează notiță'}
+                        </Button>
+                      </div>
+                    </div>
+                    {noteForm.confidential && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Notițele confidențiale rămân ascunse până la apăsarea butonului „Afișează”. (Protecția cu parolă va fi adăugată ulterior.)
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {Array.isArray(client.notes) && (client.notes as ClientData[]).length > 0 ? (
                 (client.notes as ClientData[]).map((note) => (
                   <Card key={String(note.id)}>
@@ -539,8 +933,32 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
                             <span className="text-xs text-slate-400">
                               {note.createdAt ? format(new Date(String(note.createdAt)), 'd MMM yyyy', { locale: ro }) : ''}
                             </span>
+                            {!!note.confidential && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="ml-auto h-6 gap-1 px-2 text-xs text-amber-700 hover:bg-amber-50 dark:text-amber-400"
+                                onClick={() => toggleReveal(String(note.id))}
+                              >
+                                {revealedNotes.has(String(note.id)) ? (
+                                  <><EyeOff className="h-3 w-3" /> Ascunde</>
+                                ) : (
+                                  <><Eye className="h-3 w-3" /> Afișează</>
+                                )}
+                              </Button>
+                            )}
                           </div>
-                          <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{String(note.continut)}</p>
+                          {note.confidential && !revealedNotes.has(String(note.id)) ? (
+                            <button
+                              onClick={() => toggleReveal(String(note.id))}
+                              className="flex w-full items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-left text-sm text-amber-700 transition-colors hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
+                            >
+                              <Lock className="h-3.5 w-3.5 shrink-0" />
+                              <span className="select-none italic">Notiță confidențială — apăsați pentru a afișa conținutul</span>
+                            </button>
+                          ) : (
+                            <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed">{String(note.continut)}</p>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -550,7 +968,7 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
                 <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center dark:border-slate-700">
                   <StickyNote className="mx-auto h-8 w-8 text-slate-400" />
                   <p className="mt-2 text-sm text-slate-500">Nicio notiță. Adăugați prima notiță.</p>
-                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm">+ Notiță nouă</Button>
+                  <Button className="mt-4 bg-indigo-600 hover:bg-indigo-700" size="sm" onClick={() => setNoteFormOpen(true)}>+ Notiță nouă</Button>
                 </div>
               )}
             </div>
@@ -572,6 +990,116 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* Dialog: Editare client */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Editează client</DialogTitle>
+            <DialogDescription>Actualizați datele clientului.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-nume">Nume <span className="text-red-500">*</span></Label>
+                <Input id="edit-nume" value={editForm.nume} onChange={(e) => setEditForm((f) => ({ ...f, nume: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-prenume">Prenume <span className="text-red-500">*</span></Label>
+                <Input id="edit-prenume" value={editForm.prenume} onChange={(e) => setEditForm((f) => ({ ...f, prenume: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-idnp">IDNP</Label>
+                <Input id="edit-idnp" value={editForm.idnp} onChange={(e) => setEditForm((f) => ({ ...f, idnp: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-telefon">Telefon</Label>
+                <Input id="edit-telefon" value={editForm.telefon} onChange={(e) => setEditForm((f) => ({ ...f, telefon: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input id="edit-email" type="email" value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-adresa">Adresă</Label>
+              <Textarea id="edit-adresa" value={editForm.adresa} onChange={(e) => setEditForm((f) => ({ ...f, adresa: e.target.value }))} className="h-16" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-note">Note interne</Label>
+              <Textarea id="edit-note" value={editForm.note} onChange={(e) => setEditForm((f) => ({ ...f, note: e.target.value }))} className="h-16" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Anulează</Button>
+            <Button disabled={savingEdit} onClick={handleSaveEdit} className="bg-indigo-600 hover:bg-indigo-700">
+              {savingEdit ? 'Se salvează...' : 'Salvează modificările'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Dosar nou */}
+      <Dialog open={caseOpen} onOpenChange={setCaseOpen}>
+        <DialogContent className="sm:max-w-[520px]">
+          <DialogHeader>
+            <DialogTitle>Dosar nou</DialogTitle>
+            <DialogDescription>
+              Creați un dosar pentru {String(client.prenume || '')} {String(client.nume || '')}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="case-numar">Număr dosar <span className="text-red-500">*</span></Label>
+                <Input id="case-numar" value={caseForm.numar} onChange={(e) => setCaseForm((f) => ({ ...f, numar: e.target.value }))} placeholder="2-345/2024" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="case-tip">Tip</Label>
+                <Select value={caseForm.tip} onValueChange={(v) => setCaseForm((f) => ({ ...f, tip: v }))}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="civil">Civil</SelectItem>
+                    <SelectItem value="penal">Penal</SelectItem>
+                    <SelectItem value="familial">Familial</SelectItem>
+                    <SelectItem value="administrativ">Administrativ</SelectItem>
+                    <SelectItem value="comercial">Comercial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="case-denumire">Denumire <span className="text-red-500">*</span></Label>
+              <Input id="case-denumire" value={caseForm.denumire} onChange={(e) => setCaseForm((f) => ({ ...f, denumire: e.target.value }))} placeholder="Desfacerea căsătoriei" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="case-instanta">Instanță</Label>
+                <Input id="case-instanta" value={caseForm.instanta} onChange={(e) => setCaseForm((f) => ({ ...f, instanta: e.target.value }))} placeholder="Judecătoria Chișinău" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="case-judecator">Judecător</Label>
+                <Input id="case-judecator" value={caseForm.judecator} onChange={(e) => setCaseForm((f) => ({ ...f, judecator: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="case-descriere">Descriere</Label>
+              <Textarea id="case-descriere" value={caseForm.descriere} onChange={(e) => setCaseForm((f) => ({ ...f, descriere: e.target.value }))} className="h-16" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCaseOpen(false)}>Anulează</Button>
+            <Button disabled={savingCase} onClick={handleSaveCase} className="bg-indigo-600 hover:bg-indigo-700">
+              {savingCase ? 'Se creează...' : 'Creează dosar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Generare document nou */}
+      <GenerateDocumentModal open={docModalOpen} onOpenChange={setDocModalOpen} />
     </div>
   );
 }

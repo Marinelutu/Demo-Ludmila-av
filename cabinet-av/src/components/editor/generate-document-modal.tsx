@@ -330,7 +330,7 @@ export function GenerateDocumentModal({ open, onOpenChange }: GenerateDocumentMo
                   )}
                   <div
                     ref={previewRef}
-                    className="max-h-[400px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-8 prose prose-slate dark:prose-invert max-w-none dark:border-slate-700 dark:bg-slate-950 text-sm"
+                    className="legal-document max-h-[400px] overflow-y-auto rounded-lg border border-slate-200 bg-white p-8 max-w-none dark:border-slate-700 dark:bg-slate-950"
                     dangerouslySetInnerHTML={{ __html: generatedHtml }}
                   />
                 </div>

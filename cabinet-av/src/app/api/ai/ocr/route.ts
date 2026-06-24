@@ -41,19 +41,31 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const inputBuffer = Buffer.from(arrayBuffer);
 
-    // Sharp compression: resize la max 2000px, JPEG quality 85
-    const compressedBuffer = await sharp(inputBuffer)
-      .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 85 })
-      .toBuffer();
+    const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
 
-    const base64 = compressedBuffer.toString('base64');
+    let base64: string;
+    let mimeType: string;
+
+    if (isPdf) {
+      // Gemini acceptă PDF direct — nu îl trecem prin sharp (care e doar pentru imagini)
+      base64 = inputBuffer.toString('base64');
+      mimeType = 'application/pdf';
+    } else {
+      // Imagine: compresie cu sharp (resize max 2000px, JPEG quality 85)
+      const compressedBuffer = await sharp(inputBuffer)
+        .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      base64 = compressedBuffer.toString('base64');
+      mimeType = 'image/jpeg';
+    }
+
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
     const result = await model.generateContent([
       OCR_PROMPT,
-      { inlineData: { data: base64, mimeType: 'image/jpeg' } },
+      { inlineData: { data: base64, mimeType } },
     ]);
 
     const text = result.response.text().trim();

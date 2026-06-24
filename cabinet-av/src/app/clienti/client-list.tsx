@@ -25,7 +25,6 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Search, Plus, MoreHorizontal, ArrowUpDown, Users } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
 import { useForm } from 'react-hook-form';
@@ -45,11 +44,28 @@ const clientSchema = z.object({
   idnp: z.string().regex(/^\d{13}$/, 'IDNP trebuie să aibă exact 13 cifre').optional().or(z.literal('')),
   telefon: z.string().optional().or(z.literal('')),
   email: z.string().email('Email invalid').optional().or(z.literal('')),
-  adresa: z.string().optional().or(z.literal('')),
+  // Adresă structurată — câmpuri separate pentru claritate
+  strada: z.string().optional().or(z.literal('')),
+  numar: z.string().optional().or(z.literal('')),
+  oras: z.string().optional().or(z.literal('')),
+  codPostal: z.string().optional().or(z.literal('')),
   note: z.string().optional().or(z.literal('')),
 });
 
 type ClientFormValues = z.infer<typeof clientSchema>;
+
+// Compune câmpurile de adresă într-un singur string lizibil
+function buildAdresa(v: ClientFormValues): string {
+  const linieStrada = [
+    v.strada?.trim(),
+    v.numar?.trim() ? `nr. ${v.numar.trim()}` : '',
+  ].filter(Boolean).join(', ');
+  const linieOras = [
+    v.codPostal?.trim(),
+    v.oras?.trim(),
+  ].filter(Boolean).join(' ');
+  return [linieStrada, linieOras].filter(Boolean).join(', ');
+}
 
 type ClientData = {
   id: string;
@@ -85,10 +101,19 @@ export function ClientListClient({ initialClients }: ClientListProps) {
 
   const onSubmit = async (data: ClientFormValues) => {
     try {
+      const payload = {
+        nume: data.nume,
+        prenume: data.prenume,
+        idnp: data.idnp,
+        telefon: data.telefon,
+        email: data.email,
+        adresa: buildAdresa(data),
+        note: data.note,
+      };
       const res = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) throw new Error('Failed to create client');
@@ -197,9 +222,28 @@ export function ClientListClient({ initialClients }: ClientListProps) {
                 <Input id="email" type="email" {...register('email')} placeholder="ion.popescu@exemplu.md" />
                 {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="adresa">Adresă</Label>
-                <Textarea id="adresa" {...register('adresa')} placeholder="Chișinău, str. ..." className="h-20" />
+              <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                <Label className="text-sm font-semibold">Adresă</Label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="strada" className="text-xs text-slate-500">Stradă</Label>
+                    <Input id="strada" {...register('strada')} placeholder="str. Mihai Eminescu" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="numar" className="text-xs text-slate-500">Număr</Label>
+                    <Input id="numar" {...register('numar')} placeholder="23A" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 space-y-1.5">
+                    <Label htmlFor="oras" className="text-xs text-slate-500">Oraș / Localitate</Label>
+                    <Input id="oras" {...register('oras')} placeholder="Chișinău" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="codPostal" className="text-xs text-slate-500">Cod poștal</Label>
+                    <Input id="codPostal" {...register('codPostal')} placeholder="MD-2001" />
+                  </div>
+                </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>

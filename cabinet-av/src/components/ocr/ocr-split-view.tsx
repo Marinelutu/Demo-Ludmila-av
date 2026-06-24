@@ -5,9 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
-import { Upload, CheckCircle, AlertTriangle, ZoomIn, ZoomOut, Check } from 'lucide-react';
+import { Upload, CheckCircle, AlertTriangle, ZoomIn, ZoomOut, Check, FileText, RefreshCw } from 'lucide-react';
 
 interface OcrField {
   nume_camp: string;
@@ -31,17 +30,27 @@ interface OcrSplitViewProps {
 export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [isPdf, setIsPdf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<OcrResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [editedFields, setEditedFields] = useState<Record<string, string>>({});
   const [zoom, setZoom] = useState(100);
+  const [dragActive, setDragActive] = useState(false);
+  const [lastFile, setLastFile] = useState<File | null>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processFile = async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Fișierul depășește 10MB.');
+      return;
+    }
+    const pdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
     setImageUrl(URL.createObjectURL(file));
+    setIsPdf(pdf);
+    setLastFile(file);
     setResult(null);
+    setError(null);
     setEditedFields({});
     setLoading(true);
 
@@ -50,7 +59,17 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
       formData.append('file', file);
 
       const res = await fetch('/api/ai/ocr', { method: 'POST', body: formData });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        if (res.status === 500 && body?.error?.includes('API key')) {
+          throw new Error('Cheia Gemini API nu este configurată pe server.');
+        }
+        throw new Error(
+          pdf
+            ? 'Procesarea PDF a eșuat. Încercați din nou sau un screenshot (JPG/PNG) al paginii.'
+            : 'Procesare OCR eșuată. Încercați din nou sau alt fișier.'
+        );
+      }
 
       const data: OcrResult = await res.json();
       setResult(data);
@@ -58,11 +77,44 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
       const initial: Record<string, string> = {};
       (data.campuri_identificate || []).forEach((f) => { initial[f.nume_camp] = f.valoare; });
       setEditedFields(initial);
-    } catch {
-      toast.error('OCR eșuat. Verificați cheia Gemini API.');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'OCR eșuat.';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) await processFile(file);
+    // reset, ca selectarea aceluiași fișier să declanșeze din nou onChange
+    e.target.value = '';
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) await processFile(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!dragActive) setDragActive(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+  };
+
+  const resetView = () => {
+    setImageUrl(null);
+    setResult(null);
+    setError(null);
+    setIsPdf(false);
   };
 
   const getConfidenceInfo = (confidence: number) => {
@@ -85,14 +137,23 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
       {/* Upload zone */}
       {!imageUrl && !loading && (
         <div
-          className="flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-12 text-center cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-600"
+          className={`flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed p-12 text-center cursor-pointer transition-colors ${
+            dragActive
+              ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/30'
+              : 'border-slate-300 bg-slate-50 hover:border-indigo-400 hover:bg-indigo-50/30 dark:border-slate-700 dark:bg-slate-900 dark:hover:border-indigo-600'
+          }`}
           onClick={() => fileInputRef.current?.click()}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
         >
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-100 dark:bg-indigo-900/40">
             <Upload className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div>
-            <p className="text-base font-semibold text-slate-900 dark:text-white">Trage o poză sau click pentru a selecta</p>
+            <p className="text-base font-semibold text-slate-900 dark:text-white">
+              {dragActive ? 'Eliberați fișierul aici' : 'Trage un fișier aici sau click pentru a selecta'}
+            </p>
             <p className="mt-1 text-sm text-slate-500">Acceptă: JPG, PNG, HEIC, PDF • Max 10MB</p>
           </div>
           <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileChange} />
@@ -125,19 +186,28 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
                 <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setZoom((z) => Math.min(200, z + 25))}>
                   <ZoomIn className="h-3.5 w-3.5" />
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setImageUrl(null); setResult(null); }}>
-                  Altă poză
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={resetView}>
+                  Alt fișier
                 </Button>
               </div>
             </div>
             <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-900 p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={imageUrl}
-                alt="Document original"
-                style={{ width: `${zoom}%`, transformOrigin: 'top left' }}
-                className="rounded shadow-sm mx-auto block"
-              />
+              {isPdf ? (
+                <iframe
+                  src={imageUrl}
+                  title="Document PDF"
+                  className="h-full w-full rounded border border-slate-200 bg-white dark:border-slate-700"
+                  style={{ minHeight: 480 }}
+                />
+              ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={imageUrl}
+                  alt="Document original"
+                  style={{ width: `${zoom}%`, transformOrigin: 'top left' }}
+                  className="rounded shadow-sm mx-auto block"
+                />
+              )}
             </div>
           </div>
 
@@ -158,14 +228,32 @@ export function OcrSplitView({ clientId, onSave }: OcrSplitViewProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              {!result && (
-                <div className="space-y-3">
-                  {[...Array(6)].map((_, i) => (
-                    <div key={i} className="space-y-1">
-                      <Skeleton className="h-3 w-24" />
-                      <Skeleton className="h-9 w-full" />
-                    </div>
-                  ))}
+              {!result && error && (
+                <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                    <AlertTriangle className="h-6 w-6 text-red-500" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">OCR nu a putut fi finalizat</p>
+                    <p className="mt-1 max-w-xs text-xs text-slate-500">{error}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {lastFile && (
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => processFile(lastFile)}>
+                        <RefreshCw className="h-3.5 w-3.5" /> Reîncearcă
+                      </Button>
+                    )}
+                    <Button size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700" onClick={resetView}>
+                      <FileText className="h-3.5 w-3.5" /> Alt fișier
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!result && !error && (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-slate-400">
+                  <FileText className="h-8 w-8" />
+                  <p className="text-sm">Câmpurile detectate vor apărea aici.</p>
                 </div>
               )}
 
