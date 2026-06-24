@@ -351,107 +351,244 @@ async function main() {
       {
         expeditor: 'maria.popescu@gmail.com',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Întrebare despre dosarul de divorț',
-        continut: 'Bună ziua, doamnă avocat. Vă scriu pentru a afla care este stadiul dosarului meu de divorț. Soțul meu a primit citația? Mulțumesc, Maria.',
+        subiect: 'Întrebare urgentă — stadiul dosarului divorț și custodia copilului',
+        continut: `Bună ziua, doamnă avocat Trofim,
+
+Vă scriu deoarece sunt extrem de îngrijorată de situația dosarului nostru de divorț. Au trecut deja 3 luni de la depunerea cererii și nu am primit nicio actualizare oficială.
+
+Câteva întrebări urgente:
+1. Soțul meu (Vasile Popescu, IDNP 2009876543210) a primit citația pentru ședința din luna aceasta? El mi-a spus că nu știe nimic, ceea ce mă face să cred că vrea să tergiverseze procesul.
+2. Referitor la custodia fiului nostru Alexandru (8 ani) — avocatul lui a depus o cerere reconvențională pentru custodie comună. Ce șanse avem să obținem custodia exclusivă?
+3. Am aflat că soțul a vândut mașina noastră (Skoda Octavia, nr. ABC123) în luna trecută, deși era bun comun. Putem face ceva?
+
+Vă rog să mă contactați cât mai repede. Numărul meu de telefon este +373 79 123 456.
+
+Cu stimă,
+Maria Popescu`,
         sursa: 'gmail',
         data: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
         clientId: maria.id,
         caseId: dosarMariaDivort.id,
-        aiSummary: 'Clienta Maria Popescu solicită informații despre stadiul dosarului de divorț și dacă soțul a fost citat.',
-        aiAction: 'Răspundeți cu stadiul actual al dosarului și confirmarea citării pârâtului.',
+        aiSummary: 'Clienta ridică 3 probleme: (1) confirmare citare pârât, (2) strategie custodie exclusivă vs cerere reconvențională custodie comună, (3) înstrăinare bun comun (mașină) în timpul procesului — posibil fraudă procesuală.',
+        aiAction: 'Urgent: verificați dacă Vasile Popescu a fost citat; depuneți cerere de sechestru asigurator pe bunuri comune; pregătiți răspuns la cererea reconvențională de custodie.',
         status: 'procesat',
       },
       {
         expeditor: 'av.gheorghe@avocatura.md',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Propunere colaborare dosar comercial',
-        continut: 'Stimată colegă, am un dosar comercial complex care ar beneficia de expertiza dvs. în drept comercial. Putem programa o discuție?',
+        subiect: 'Propunere colaborare — dosar comercial complex (fond 1.2M lei)',
+        continut: `Stimată colegă Ludmila,
+
+Sper că ești bine. Îți scriu în legătură cu un dosar comercial nou pe care l-am primit și care depășește aria mea de specializare principală (drept penal).
+
+Situația pe scurt: clientul meu, SRL Constructiv Grup, a intrat într-un litigiu cu un contractor internațional (firma austriacă Bauer GmbH) privind rezilierea unui contract de construcție în valoare de 4,2 milioane euro. Fondul de 1,2 milioane lei reprezintă penalitățile contractuale solicitate.
+
+Complexitatea dosarului:
+- Contract cu clauze de arbitraj internațional (ICC Paris), dar contractorul a ales să deschidă acțiunea la instanța din Chișinău
+- Probleme de drept internațional privat — aplicabilitatea legii austriece vs. moldovenești
+- Termen scurt: 15 zile pentru depunerea întâmpinării
+
+Știind experiența ta în drept comercial și relațiile contractuale internaționale, m-am gândit că am putea colabora. Eu gestionez aspectele penale dacă apar (suspiciune de fraudă contractuală), tu preiei litigiul civil/comercial propriu-zis.
+
+Onorariul l-am discuta împreună. Clientul are resurse și este dispus la onorariu de succes 15%.
+
+Putem discuta joi sau vineri la cabinetul tău?
+
+Cu colegialitate,
+Av. Gheorghe Munteanu
+Tel: +373 22 456 789`,
         sursa: 'gmail',
         data: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
-        aiSummary: 'Avocat confratel propune colaborare pe un dosar comercial.',
-        aiAction: 'Programați o întâlnire pentru discuție.',
-        status: 'procesat',
-      },
-      {
-        expeditor: 'newsletter@juridice.md',
-        destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Noutăți legislative — Iunie 2024',
-        continut: 'Modificări importante la Codul Familiei și Codul de Procedură Civilă. Citește articolul complet pe juridice.md.',
-        sursa: 'gmail',
-        data: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000),
-        aiSummary: 'Newsletter juridic cu modificări la Codul Familiei și Codul de Procedură Civilă.',
+        aiSummary: 'Coleg avocat (drept penal) propune colaborare pe litigiu comercial internațional SRL Constructiv Grup vs Bauer GmbH (Austria), fond 1,2M lei penalități. Termen de 15 zile pentru întâmpinare. Onorariu de succes 15%.',
+        aiAction: 'Analizați clauza de arbitraj ICC — dacă instanța RM are competență; programați întâlnire joi/vineri; solicitați copia contractului și actul de sesizare.',
         status: 'procesat',
       },
       {
         expeditor: 'grefa@judecatoria-chisinau.justice.md',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Citație ședință — dosar 3-234/2024',
-        continut: 'Prin prezenta vă comunicăm că ședința de judecată în dosarul nr. 3-234/2024 SRL Tehnomag vs SRL DataServ este programată pentru data de ' + new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000).toLocaleDateString('ro-RO') + ', ora 10:00.',
+        subiect: `CITAȚIE — Dosar nr. 3-234/2024 — Ședință ${new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000).toLocaleDateString('ro-RO')}`,
+        continut: `JUDECĂTORIA CHIȘINĂU
+Sediul Central — str. Pushkin 47, mun. Chișinău
+Grefier: Olga Ciobanu | Tel: 022-221-456 | grefa@judecatoria-chisinau.justice.md
+
+─────────────────────────────────────────────
+CITAȚIE
+─────────────────────────────────────────────
+
+Dosar nr.: 3-234/2024
+Reclamant: SRL TEHNOMAG, IDNO 1005600123456, repr. prin Av. Ludmila Trofim
+Pârât: SRL DATASERV, IDNO 1007800987654
+Obiect: Recuperare creanță — 85.000 lei + penalități contractuale
+
+Prin prezenta vă comunicăm că ȘEDINȚA DE JUDECATĂ în dosarul menționat este programată pentru:
+
+DATA: ${new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000).toLocaleDateString('ro-RO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+ORA: 10:00
+SALA: 12 (etaj II)
+JUDECĂTOR: Mihail Rotaru
+
+La ședință se vor examina:
+1. Admiterea probelor suplimentare (facturile depuse de reclamant)
+2. Audierea martorului Andrei Bogdan (directorul comercial SRL Tehnomag)
+3. Dezbaterile pe fond dacă va fi cazul
+
+ATENȚIE: Reprezentantul legal este obligat să se prezinte cu împuternicire notarială actualizată și legitimația de avocat.
+
+Neprezentarea nejustificată poate atrage judecarea în lipsă conform art. 205 CPC RM.
+
+─────────────────────────────────────────────
+Grefier principal: Olga Ciobanu
+Judecătoria Chișinău, Sediul Central`,
         sursa: 'justice_md',
         data: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000),
         clientId: tehnomag.id,
         caseId: dosarTehnomag1.id,
-        aiSummary: 'Citație pentru ședința de judecată în dosarul SRL Tehnomag vs SRL DataServ.',
-        aiAction: 'Pregătiți actele pentru ședință și informați clientul.',
+        aiSummary: `Citație oficială pentru ședința din ${new Date(now.getTime() + 9 * 24 * 60 * 60 * 1000).toLocaleDateString('ro-RO')}, ora 10:00, Sala 12, judecător Mihail Rotaru. Agenda: probe suplimentare (facturi) + martor Andrei Bogdan + dezbateri fond.`,
+        aiAction: 'Pregătiți: (1) împuternicire notarială actualizată, (2) coordonați prezența martorului Andrei Bogdan, (3) finalizați argumentele pe fond, (4) informați clientul SRL Tehnomag.',
         status: 'nou',
         hasAttachments: false,
       },
       {
         expeditor: 'grefa@curtea-apel.justice.md',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Hotărâre primă instanță — dosar 2-345/2024',
-        continut: 'Vă transmitem hotărârea primei instanțe în dosarul nr. 2-345/2024 Popescu Maria vs. Popescu Vasile. Hotărârea este atașată.',
+        subiect: 'Hotărâre primă instanță — dosar 2-345/2024 — Popescu M. vs Popescu V.',
+        continut: `CURTEA DE APEL CHIȘINĂU
+Serviciul Grefă — Secția Civilă
+Tel: 022-234-567 | grefa@curtea-apel.justice.md
+
+─────────────────────────────────────────────
+COMUNICARE HOTĂRÂRE
+─────────────────────────────────────────────
+
+Dosar nr.: 2-345/2024
+Instanța: Judecătoria Chișinău, Sediul Central
+Data pronunțării: ${new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('ro-RO')}
+
+Prin prezenta vă transmitem HOTĂRÂREA JUDECĂTORIEI CHIȘINĂU în dosarul nr. 2-345/2024:
+
+POPESCU MARIA, IDNP 2012345678901 — Reclamantă
+vs.
+POPESCU VASILE, IDNP 2009876543210 — Pârât
+
+DISPOZITIV:
+Instanța ADMITE PARȚIAL acțiunea reclamantei și dispune:
+1. ✅ DESFACEREA CĂSĂTORIEI înregistrate la data de 12.06.2015, act nr. 123/2015
+2. ✅ STABILIREA DOMICILIULUI minorului Alexandru Popescu, n. 15.03.2016, la mamă (reclamantă)
+3. ✅ OBLIGAREA pârâtului la plata pensiei de întreținere în cuantum de 25% din venitul lunar, începând cu data pronunțării
+4. ❌ RESPINGE cererea privind împărțirea apartamentului (str. Calea Ieșilor 5, ap. 12) — instanța apreciază că bunul a fost dobândit anterior căsătoriei (donație de la părinții pârâtului)
+
+TERMEN DE APEL: 30 de zile de la comunicare (art. 362 CPC RM)
+Hotărârea integrală este atașată în format PDF.
+
+─────────────────────────────────────────────
+Grefier: Ion Barbă | Judecătoria Chișinău`,
         sursa: 'justice_md',
         data: new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000),
         clientId: maria.id,
         caseId: dosarMariaDivort.id,
-        aiSummary: 'Hotărârea primei instanțe în dosarul de divorț Maria Popescu. Admisă parțial.',
-        aiAction: 'Analizați hotărârea și pregătiți cererea de apel dacă e necesar.',
+        aiSummary: 'Hotărâre admisă parțial: divorț ✅, custodie minor la mamă ✅, pensie alimentară 25% ✅, dar împărțirea apartamentului ❌ RESPINSĂ (bun personal pârât). Termen apel: 30 zile.',
+        aiAction: 'URGENT: Analizați motivarea respingerii cererii privind apartamentul — dacă donația poate fi contestată; discutați cu Maria oportunitatea apelului; termen scurt de 30 zile.',
         status: 'procesat',
         hasAttachments: true,
-        attachments: JSON.stringify(['hotarare_2-345-2024.pdf']),
+        attachments: JSON.stringify(['hotarare_2-345-2024_integral.pdf']),
       },
       {
         expeditor: 'ion.vasilescu@mail.md',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Documente pentru dosar',
-        continut: 'Bună ziua. Vă trimit documentele solicitate pentru dosarul de recuperare datorie. Am atașat contractul original și chitanțele.',
+        subiect: 'Documente dosar — contractul original + dovezi plată parțială',
+        continut: `Bună ziua, doamnă avocat Trofim,
+
+Conform discuției noastre telefonice de ieri, vă trimit documentele solicitate pentru dosarul de recuperare a creanței față de Andrei Moraru.
+
+Documentele atașate:
+1. CONTRACT DE ÎMPRUMUT din 15 martie 2023 — suma totală 85.000 lei, termen rambursare 15 septembrie 2023 (semnat de ambele părți, în original scanat)
+2. CHITANȚĂ nr. 1 — 20.000 lei, plătit la 01.04.2023 (Moraru a recunoscut că a primit o parte)
+3. CHITANȚĂ nr. 2 — 10.000 lei, plătit la 15.05.2023
+4. MESAJE WHATSAPP — conversație în care Moraru recunoaște datoria și promite rambursarea până în octombrie (screenshot-uri, 8 pagini)
+5. EXTRAS CONT BANCAR — transferul inițial de 85.000 lei din contul meu în contul lui Moraru (confirmă suma împrumutată)
+
+IMPORTANT: Am descoperit că Moraru a pus apartamentul pe numele soției lui în august 2023 (imediat după ce a expirat termenul de rambursare). Cred că a făcut asta ca să ascundă bunurile. Poate fi atacat acest transfer?
+
+Suma rămasă nerecuperată: 55.000 lei + dobânzi contractuale 12%/an.
+
+Vă rog să îmi confirmați primirea documentelor.
+
+Cu respect,
+Ion Vasilescu
+Tel: +373 60 987 654`,
         sursa: 'gmail',
         data: new Date(now.getTime() - 4 * 60 * 60 * 1000),
         clientId: ion.id,
         caseId: dosarIonCivil.id,
-        aiSummary: 'Clientul Ion Vasilescu trimite documente solicitate pentru dosarul de recuperare datorie.',
-        aiAction: 'Verificați documentele atașate și confirmați primirea.',
+        aiSummary: 'Ion Vasilescu trimite: contract împrumut 85.000 lei, 2 chitanțe (plăți parțiale 30.000 lei), mesaje WhatsApp cu recunoaștere datorie, extras cont. Suma restantă: 55.000 lei + dobânzi 12%. Alertă: debitorul a transferat apartamentul pe soție în august 2023 — posibil actul simulat.',
+        aiAction: 'Verificați data transferului apartamentului față de data scadenței — dacă e ulterioară, acțiune pauliană posibilă (art. 530 CC RM). Solicitați extras CF pentru apartamentul lui Moraru. Depuneți cerere de sechestru pe bunurile debitorului.',
         status: 'nou',
         hasAttachments: true,
-        attachments: JSON.stringify(['contract_imprumut.pdf', 'chitanta_1.jpg', 'chitanta_2.jpg']),
+        attachments: JSON.stringify(['contract_imprumut_15032023.pdf', 'chitanta_1_20000lei.jpg', 'chitanta_2_10000lei.jpg', 'whatsapp_moraru_8pag.pdf', 'extras_cont_BCR.pdf']),
       },
       {
         expeditor: 'office@tehnomag.md',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Facturi suplimentare dosar DataServ',
-        continut: 'Doamnă avocat, am găsit facturi suplimentare care dovedesc livrările efectuate. Le atașez.',
+        subiect: 'Facturi suplimentare + situație livrări — dosar DataServ',
+        continut: `Doamnă avocat Trofim,
+
+Conform celor discutate la ultima ședință, am efectuat un audit intern complet al relației comerciale cu SRL DataServ și am identificat documente suplimentare importante.
+
+PROBE NOI IDENTIFICATE:
+
+1. FACTURA nr. 568/2023 — 35.000 lei (livrare servere Dell PowerEdge, 15.08.2023) — NEPLĂTITĂ
+   Aviz de însoțire semnat de directorul DataServ, Petru Oprea
+
+2. FACTURA nr. 569/2023 — 27.500 lei (livrare echipamente rețea Cisco, 30.08.2023) — NEPLĂTITĂ
+   Aviz de însoțire semnat + bon de recepție cu ștampila DataServ
+
+3. EMAIL-URI INTERNE DataServ (obținute legal) — în care directorul Petru Oprea recunoaște că "Tehnomag a livrat tot" și că "trebuie să găsim bani" — relevante pentru demonstrarea relei credințe
+
+4. CONTRACT CADRU 2022 cu clauza penalități 0.1%/zi întârziere — suma penalităților calculate: 18.600 lei până azi
+
+TOTAL CREANȚĂ ACTUALIZATĂ: 85.000 lei principal + 18.600 lei penalități = 103.600 lei
+
+Directorul nostru, dl Andrei Bogdan, este disponibil pentru audiere marți sau miercuri. Vă rugăm să îl informați despre ora exactă a ședinței.
+
+Cu stimă,
+Secretariat SRL TEHNOMAG
+office@tehnomag.md | Tel: +373 22 567 890`,
         sursa: 'gmail',
         data: new Date(now.getTime() - 6 * 60 * 60 * 1000),
         clientId: tehnomag.id,
         caseId: dosarTehnomag1.id,
-        aiSummary: 'SRL Tehnomag trimite facturi suplimentare ca probe pentru dosarul vs DataServ.',
-        aiAction: 'Includeți facturile ca probe suplimentare în dosar.',
+        aiSummary: 'SRL Tehnomag trimite probe noi: 2 facturi neplătite (62.500 lei), email-uri interne DataServ cu recunoaștere datorie, calcul penalități 18.600 lei. Creanță totală actualizată: 103.600 lei. Directorul Andrei Bogdan disponibil pentru audiere marți/miercuri.',
+        aiAction: 'Depuneți cerere de admitere probe suplimentare înainte de ședință; notificați instanța despre martorul Bogdan (disponibil mar/mie); recalculați valoarea acțiunii la 103.600 lei; verificați admisibilitatea email-urilor interne ca probă.',
         status: 'nou',
         hasAttachments: true,
-        attachments: JSON.stringify(['factura_568.pdf', 'factura_569.pdf']),
+        attachments: JSON.stringify(['factura_568_2023.pdf', 'factura_569_2023.pdf', 'avize_insotire.pdf', 'emailuri_interne_dataserv.pdf', 'calcul_penalitati.xlsx']),
       },
       {
         expeditor: 'elena.botezatu@gmail.com',
         destinatar: 'av.ludmila@cabinet.md',
-        subiect: 'Urgentare dosar pensie alimentară',
-        continut: 'Bună ziua. Fostul soț nu a plătit nici luna aceasta pensia alimentară. Ce putem face? Sunt într-o situație disperată.',
+        subiect: 'URGENT — 3 luni fără pensie alimentară, copiii suferă',
+        continut: `Doamnă avocat Trofim, bună seara,
+
+Vă scriu din nou, mai disperată ca oricând. Fostul meu soț, Alexandru Botezatu (IDNP 2001234567890), NU a plătit pensia alimentară nici în aprilie, nici în mai, nici în iunie. Este vorba de 3 luni consecutive, total neachitat: 3 × 2.400 lei = 7.200 lei.
+
+Situația concretă:
+- Hotărârea judecătorească stabilește 2.400 lei/lună (câte 1.200 lei per copil, am doi copii: Ioana 7 ani și Mihai 5 ani)
+- Hotărârea a rămas definitivă din martie 2024
+- El lucrează la SRL Viorela Trans (IDNO 1008900111222) ca șofer de TIR, salariu aproximativ 12.000-15.000 lei/lună
+- Mi-a spus că "nu are bani" dar l-am văzut pe Facebook că și-a cumpărat o motocicletă nouă
+
+Ce pot face? Pot fi executat silit? Poate fi reținut la frontieră? El pleacă des în România cu TIR-ul.
+
+Copiii întreabă de mâncare și eu nu știu ce să le spun. Vă rog din suflet să mă ajutați cât mai repede.
+
+Elena Botezatu
+Tel: +373 78 234 567`,
         sursa: 'gmail',
         data: new Date(now.getTime() - 2 * 60 * 60 * 1000),
         clientId: elena.id,
         caseId: dosarElena.id,
-        aiSummary: 'Clienta Elena Botezatu raportează neplata pensiei alimentare de către fostul soț și solicită urgentarea dosarului.',
-        aiAction: 'Sugerați cerere de executare silită sau ordonanță președințială.',
+        aiSummary: 'Elena Botezatu raportează 3 luni pensie alimentară neachitată (7.200 lei total). Debitorul lucrează la SRL Viorela Trans, salariu ~12-15k lei, dar refuză plata — posibil tăinuire venituri. Solicită executare silită urgentă și interdicție ieșire din țară.',
+        aiAction: 'URGENT: (1) Depuneți cerere executor judecătoresc pentru poprire salariu la SRL Viorela Trans; (2) Solicitați interdicție de ieșire din țară (relevanță: pleacă des în România); (3) Depuneți plângere penală art. 202 CP RM (eschivare plată pensie alimentară — 3 luni consecutive depășesc pragul).',
         status: 'nou',
       },
     ],

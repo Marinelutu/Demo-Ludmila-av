@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { prisma } from '@/lib/prisma';
+import { notifyEmailProcessed } from '@/lib/telegram/notify';
 
 export async function POST(req: NextRequest) {
   try {
@@ -74,6 +75,15 @@ ${clientList || '(nicio înregistrare)'}`;
       where: { id: emailId },
       data: updateData,
       include: { client: true },
+    });
+
+    void notifyEmailProcessed({
+      expeditor: updatedEmail.expeditor,
+      subiect: updatedEmail.subiect,
+      rezumat: updatedEmail.aiSummary,
+      actiune: updatedEmail.aiAction,
+      clientName: updatedEmail.client ? `${updatedEmail.client.prenume} ${updatedEmail.client.nume}` : null,
+      urgent: parsed.urgent === true,
     });
 
     return NextResponse.json({

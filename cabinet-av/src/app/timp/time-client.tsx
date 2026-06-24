@@ -12,7 +12,6 @@ import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import { toast } from 'sonner';
 
-const TARIF_ORAR = 800; // lei/h
 
 interface TimeEntry {
   id: string;
@@ -35,11 +34,14 @@ function formatDuration(seconds: number) {
 
 export function TimeClient({
   initialEntries,
+  hourlyRate = 800,
 }: {
   initialEntries: TimeEntry[];
   clients?: unknown[];
   cases?: unknown[];
+  hourlyRate?: number;
 }) {
+  const TARIF_ORAR = hourlyRate;
   const { activeTimer, startTimer, stopTimer } = useAppStore();
   const [filter, setFilter] = useState('');
   const [elapsed, setElapsed] = useState(activeTimer.elapsed);

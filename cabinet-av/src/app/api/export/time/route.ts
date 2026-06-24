@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-const TARIF_ORAR = 800; // lei/h — default
+async function getHourlyRate(): Promise<number> {
+  const s = await prisma.appSettings.findUnique({ where: { id: 1 } });
+  return s?.hourlyRate ?? 800;
+}
 
 function formatDuration(seconds: number): string {
   if (!seconds) return '0:00:00';
@@ -14,6 +17,7 @@ function formatDuration(seconds: number): string {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get('clientId');
+  const TARIF_ORAR = await getHourlyRate();
 
   const entries = await prisma.timeEntry.findMany({
     where: clientId ? { clientId } : {},

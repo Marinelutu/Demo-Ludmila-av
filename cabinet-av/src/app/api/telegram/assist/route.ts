@@ -1,8 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import sharp from 'sharp';
 import { prisma } from '@/lib/prisma';
 import { sendMessage, sendDocument, getFileUrl } from '@/lib/telegram/send';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+
+const OCR_PROMPT = `Analizează acest document juridic și extrage:
+
+1. textul_complet: tot textul vizibil în document
+2. tip_document: ce este (buletin / contract / citatie / hotarare / cerere / alt)
+3. campuri_identificate: array de obiecte cu:
+   - nume_camp (ex: "IDNP", "Nume", "Prenume", "Data nașterii", "Număr dosar", "Instanță")
+   - valoare (textul extras)
+   - confidence (0.0-1.0)
+   - locatie (descriere zonă: "colț stânga sus", "centru pagină", etc)
+
+Returnează STRICT JSON valid, fără markdown, fără explicații.
+
+Format exact:
+{
+  "textul_complet": "...",
+  "tip_document": "...",
+  "campuri_identificate": [
+    { "nume_camp": "...", "valoare": "...", "confidence": 0.0, "locatie": "..." }
+  ]
+}`;
+
+function escapeTgHtml(s: string) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 const ASSIST_TOKEN = process.env.TELEGRAM_BOT_ASSIST_TOKEN;
 
@@ -170,8 +197,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // Photo → OCR
+    // Photo → OCR (Gemini multimodal)
     if (photo && photo.length > 0) {
+      if (!process.env.GEMINI_API_KEY) {
+        await reply(chatId, '❌ Gemini API key lipsă. Configurați GEMINI_API_KEY în .env.local.');
+        return NextResponse.json({ ok: true });
+      }
+
       await reply(chatId, '📷 Procesez imaginea prin OCR...');
       const largestPhoto = photo[photo.length - 1];
       const fileUrl = await getFileUrl(largestPhoto.file_id, ASSIST_TOKEN || '');
@@ -181,13 +213,71 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true });
       }
 
-      await reply(chatId, `🔍 <b>OCR activat</b>\n\nPentru extragere completă de câmpuri, folosiți aplicația web: deschideți modulul <b>Documente → Upload & OCR</b>.\n\nURL imagine procesat: ${fileUrl}`);
+      const imgRes = await fetch(fileUrl);
+      const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+      const compressed = await sharp(imgBuffer)
+        .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      const base64 = compressed.toString('base64');
+
+      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const ocrResult = await model.generateContent([
+        OCR_PROMPT,
+        { inlineData: { data: base64, mimeType: 'image/jpeg' } },
+      ]);
+
+      const rawText = ocrResult.response.text().trim();
+      const jsonText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+
+      let parsed: { tip_document?: string; campuri_identificate?: Array<{ nume_camp: string; valoare: string; confidence: number }> };
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        await reply(chatId, `📷 <b>Text extras (fallback)</b>\n\n${escapeTgHtml(rawText.slice(0, 1500))}`);
+        return NextResponse.json({ ok: true });
+      }
+
+      const tip = parsed.tip_document || 'document';
+      const campuri = parsed.campuri_identificate || [];
+
+      const lines = [`📷 <b>OCR — ${escapeTgHtml(tip)}</b>`, ''];
+      if (campuri.length === 0) {
+        lines.push('<i>Niciun câmp identificat. Folosiți aplicația web pentru detalii.</i>');
+      } else {
+        for (const c of campuri.slice(0, 15)) {
+          const icon = c.confidence >= 0.9 ? '✅' : c.confidence >= 0.7 ? '⚠️' : '❌';
+          lines.push(`${icon} <b>${escapeTgHtml(c.nume_camp)}:</b> ${escapeTgHtml(String(c.valoare))}`);
+        }
+        if (campuri.length > 15) lines.push('', `<i>… ${campuri.length - 15} câmpuri suplimentare. Vedere completă în aplicație.</i>`);
+      }
+
+      await reply(chatId, lines.join('\n'));
       return NextResponse.json({ ok: true });
     }
 
     // Unknown command
     if (text.startsWith('/')) {
       await reply(chatId, '❓ Comandă necunoscută. Scrieți /start pentru a vedea comenzile disponibile.');
+      return NextResponse.json({ ok: true });
+    }
+
+    // Plain text (orice mesaj liber, inclusiv link-uri) → răspuns AI juridic
+    if (text) {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 800,
+        temperature: 0.2,
+        system: `Ești asistentul juridic al cabinetului Av. Ludmila Trofim din Republica Moldova.
+Răspunzi scurt, profesional, în română. Dacă primești un link, explică ce ar putea conține și cum poate fi util juridic.
+Dacă primești o întrebare, răspunzi cu informații juridice din legislația RM.
+Nu folosești markdown complex — doar text simplu cu emojis dacă e necesar.`,
+        messages: [{ role: 'user', content: text }],
+      });
+      const answer = response.content[0].type === 'text' ? response.content[0].text : 'Nu am putut genera un răspuns.';
+      await reply(chatId, `💬 ${answer}\n\n<i>Tip: /intreaba [întrebare] pentru consiliere detaliată • /document [client] [tip] pentru a genera un document</i>`);
     }
 
     return NextResponse.json({ ok: true });
