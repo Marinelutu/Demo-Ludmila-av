@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import sharp from 'sharp';
 
 const OCR_PROMPT = `Analizează acest document juridic și extrage:
@@ -26,8 +26,8 @@ Format exact:
 Câmpurile cu confidence < 0.8 necesită verificare suplimentară.`;
 
 export async function POST(req: NextRequest) {
-  if (!process.env.GEMINI_API_KEY) {
-    return NextResponse.json({ error: 'Gemini API key lipsă' }, { status: 500 });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'Anthropic API key lipsă' }, { status: 500 });
   }
 
   try {
@@ -43,32 +43,37 @@ export async function POST(req: NextRequest) {
 
     const isPdf = file.type === 'application/pdf' || file.name?.toLowerCase().endsWith('.pdf');
 
-    let base64: string;
-    let mimeType: string;
+    // Claude vision (images) + native PDF document blocks. The Gemini path was
+    // dropped because the configured GEMINI_API_KEY is invalid; the Anthropic
+    // key is valid and Claude handles both images and PDFs.
+    const mediaBlock: Anthropic.ContentBlockParam = isPdf
+      ? {
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: inputBuffer.toString('base64') },
+        }
+      : {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: 'image/jpeg',
+            data: (
+              await sharp(inputBuffer)
+                .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 85 })
+                .toBuffer()
+            ).toString('base64'),
+          },
+        };
 
-    if (isPdf) {
-      // Gemini acceptă PDF direct — nu îl trecem prin sharp (care e doar pentru imagini)
-      base64 = inputBuffer.toString('base64');
-      mimeType = 'application/pdf';
-    } else {
-      // Imagine: compresie cu sharp (resize max 2000px, JPEG quality 85)
-      const compressedBuffer = await sharp(inputBuffer)
-        .resize(2000, 2000, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 85 })
-        .toBuffer();
-      base64 = compressedBuffer.toString('base64');
-      mimeType = 'image/jpeg';
-    }
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8000,
+      messages: [{ role: 'user', content: [mediaBlock, { type: 'text', text: OCR_PROMPT }] }],
+    });
 
-    const result = await model.generateContent([
-      OCR_PROMPT,
-      { inlineData: { data: base64, mimeType } },
-    ]);
-
-    const text = result.response.text().trim();
+    const text = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
 
     // Strip markdown code blocks if present
     const jsonText = text.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();

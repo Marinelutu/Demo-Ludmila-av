@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import { prisma } from '@/lib/prisma';
 import { sendMessage, sendDocument, getFileUrl } from '@/lib/telegram/send';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from 'docx';
+import { detectTemplateId, generateDocument } from '@/lib/document-templates';
 
 const OCR_PROMPT = `Analizează acest document juridic și extrage:
 
@@ -69,6 +70,42 @@ async function generateHtmlToDocx(html: string): Promise<Buffer> {
   return Packer.toBuffer(doc);
 }
 
+// Deterministic-template output is plain text — render it to a formatted .docx
+// (bold headings for roman-numeral sections and ALL-CAPS titles).
+async function templateTextToDocx(plainText: string): Promise<Buffer> {
+  const children: Paragraph[] = [
+    new Paragraph({
+      text: 'Cabinet Juridic Av. Ludmila Trofim',
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 80 },
+    }),
+    new Paragraph({ text: '', spacing: { after: 160 } }),
+  ];
+
+  for (const raw of plainText.split('\n')) {
+    const line = raw.trim();
+    if (!line) {
+      children.push(new Paragraph({ text: '', spacing: { after: 80 } }));
+      continue;
+    }
+    if (/^[IVX]+\.\s+[A-ZĂÂÎȘȚ\s]+$/.test(line) || /^[A-ZĂÂÎȘȚ\s]{6,}$/.test(line)) {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line, bold: true, size: 24 })],
+        spacing: { before: 240, after: 120 },
+      }));
+    } else {
+      children.push(new Paragraph({
+        children: [new TextRun({ text: line, size: 24 })],
+        spacing: { after: 100 },
+        indent: line.startsWith('—') || line.startsWith('-') ? { left: 360 } : undefined,
+      }));
+    }
+  }
+
+  const doc = new Document({ sections: [{ children }] });
+  return Packer.toBuffer(doc);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -120,6 +157,49 @@ export async function POST(req: NextRequest) {
       const activeCase = matchedClient.cases[0];
 
       const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+
+      // Template path: deterministic generation for known document types.
+      const templateId = detectTemplateId(docTip);
+      if (templateId) {
+        try {
+          const docs = await prisma.document.findMany({
+            where: {
+              OR: [
+                { clientId: matchedClient.id },
+                ...(activeCase ? [{ caseId: activeCase.id }] : []),
+              ],
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+          });
+          const notes = await prisma.note.findMany({
+            where: { clientId: matchedClient.id },
+            take: 10,
+          });
+          const context = [
+            `Client: ${matchedClient.prenume} ${matchedClient.nume}`,
+            matchedClient.idnp ? `IDNP: ${matchedClient.idnp}` : '',
+            matchedClient.adresa ? `Domiciliu: ${matchedClient.adresa}` : '',
+            matchedClient.telefon ? `Telefon: ${matchedClient.telefon}` : '',
+            matchedClient.email ? `Email: ${matchedClient.email}` : '',
+            activeCase ? `Dosar: ${activeCase.numar} — ${activeCase.denumire} (instanța: ${activeCase.instanta || 'necunoscută'}${activeCase.judecator ? `, judecător: ${activeCase.judecator}` : ''})` : '',
+            activeCase?.descriere ? `Descriere dosar: ${activeCase.descriere}` : '',
+            ...docs.map((d) => `Document "${d.nume}": ${(d.textContent || d.ocrFields || '').slice(0, 1500)}`),
+            ...notes.map((n) => `Notă: ${n.continut}`),
+          ].filter(Boolean).join('\n');
+
+          const { text, missingFields } = await generateDocument(templateId, context, anthropic);
+          const docxBuffer = await templateTextToDocx(text);
+          const filename = `${docTip.replace(/\s+/g, '_')}_${matchedClient.nume}.docx`;
+          const caption = `📄 ${docTip} — ${matchedClient.prenume} ${matchedClient.nume}`
+            + (missingFields.length ? `\n⚠️ De completat manual: ${missingFields.join(', ')}` : '');
+          await sendDocument(chatId, docxBuffer, filename, caption, ASSIST_TOKEN);
+          return NextResponse.json({ ok: true });
+        } catch (err) {
+          console.error('template generation failed, falling back to free-form:', err);
+        }
+      }
+
       const genResponse = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2048,
