@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import sharp from 'sharp';
 import { prisma } from '@/lib/prisma';
 import { sendMessage, sendDocument, getFileUrl } from '@/lib/telegram/send';
@@ -279,8 +278,8 @@ export async function POST(req: NextRequest) {
 
     // Photo → OCR (Gemini multimodal)
     if (photo && photo.length > 0) {
-      if (!process.env.GEMINI_API_KEY) {
-        await reply(chatId, '❌ Gemini API key lipsă. Configurați GEMINI_API_KEY în .env.local.');
+      if (!process.env.ANTHROPIC_API_KEY) {
+        await reply(chatId, '❌ Anthropic API key lipsă. Configurați ANTHROPIC_API_KEY în .env.local.');
         return NextResponse.json({ ok: true });
       }
 
@@ -301,14 +300,20 @@ export async function POST(req: NextRequest) {
         .toBuffer();
       const base64 = compressed.toString('base64');
 
-      const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const ocrResult = await model.generateContent([
-        OCR_PROMPT,
-        { inlineData: { data: base64, mimeType: 'image/jpeg' } },
-      ]);
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || '' });
+      const ocrResult = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 4000,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+            { type: 'text', text: OCR_PROMPT },
+          ],
+        }],
+      });
 
-      const rawText = ocrResult.response.text().trim();
+      const rawText = ocrResult.content[0].type === 'text' ? ocrResult.content[0].text.trim() : '';
       const jsonText = rawText.replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
 
       let parsed: { tip_document?: string; campuri_identificate?: Array<{ nume_camp: string; valoare: string; confidence: number }> };
