@@ -9,13 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Edit2, Folder, Mail, Phone, FileText, Mic, MicOff, Clock, CheckCircle2,
-  AlertCircle, FileCheck, StickyNote, Lock, Plus, Eye, EyeOff, Sparkles,
+  AlertCircle, FileCheck, StickyNote, Lock, Plus, Eye, EyeOff, Sparkles, Trash2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import { toast } from 'sonner';
-import { OcrSplitView } from '@/components/ocr/ocr-split-view';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { OcrSheet } from '@/components/ocr/ocr-sheet';
 import { ScanLine } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -28,8 +27,47 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { GenerateDocumentModal } from '@/components/editor/generate-document-modal';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 type ClientData = Record<string, unknown>;
+
+// Adresă structurată ↔ string unic (DB stochează `adresa` ca un singur câmp text).
+type AdresaFields = { strada: string; numar: string; oras: string; codPostal: string };
+
+function buildAdresa(v: AdresaFields): string {
+  const linieStrada = [v.strada?.trim(), v.numar?.trim() ? `nr. ${v.numar.trim()}` : '']
+    .filter(Boolean).join(', ');
+  const linieOras = [v.codPostal?.trim(), v.oras?.trim()].filter(Boolean).join(' ');
+  return [linieStrada, linieOras].filter(Boolean).join(', ');
+}
+
+// Parsare best-effort a adresei existente în câmpuri separate (utilizatorul
+// poate corecta manual înainte de salvare).
+function parseAdresa(adresa: string): AdresaFields {
+  const result: AdresaFields = { strada: '', numar: '', oras: '', codPostal: '' };
+  if (!adresa?.trim()) return result;
+  const parts = adresa.split(',').map((p) => p.trim()).filter(Boolean);
+  const remaining: string[] = [];
+  for (const part of parts) {
+    const nrMatch = part.match(/^nr\.?\s*(.+)$/i);
+    if (nrMatch) { result.numar = nrMatch[1].trim(); continue; }
+    const cpMatch = part.match(/^(MD-?\d{3,5})\s+(.+)$/i) || part.match(/^(\d{4,6})\s+(.+)$/);
+    if (cpMatch) { result.codPostal = cpMatch[1].trim(); result.oras = cpMatch[2].trim(); continue; }
+    remaining.push(part);
+  }
+  if (remaining.length) {
+    result.strada = remaining[0];
+    if (!result.oras && remaining.length > 1) result.oras = remaining[remaining.length - 1];
+  }
+  return result;
+}
+
+const CONTRACT_TIP_LABELS: Record<string, string> = {
+  asistenta_juridica: 'Contract de asistență juridică',
+  reprezentare: 'Contract de reprezentare',
+  consultanta: 'Contract de consultanță juridică',
+  abonament: 'Contract de abonament juridic',
+};
 
 interface ConsultationResult {
   transcript: string;
@@ -85,18 +123,39 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
   // OCR sheet
   const [ocrOpen, setOcrOpen] = useState(false);
 
+  // Ștergere client
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const handleDeleteClient = async () => {
+    try {
+      const res = await fetch(`/api/clients?id=${client.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Client șters');
+      router.push('/clienti');
+    } catch {
+      toast.error('Eroare la ștergerea clientului.');
+    }
+  };
+
   // Dialog: editare client
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState({
+  const buildInitialEdit = () => ({
     nume: String(client.nume || ''),
     prenume: String(client.prenume || ''),
     idnp: String(client.idnp || ''),
     telefon: String(client.telefon || ''),
     email: String(client.email || ''),
-    adresa: String(client.adresa || ''),
     note: String(client.note || ''),
+    ...parseAdresa(String(client.adresa || '')),
   });
+  const [editForm, setEditForm] = useState(buildInitialEdit);
   const [savingEdit, setSavingEdit] = useState(false);
+
+  // Re-inițializăm formularul din datele clientului la fiecare deschidere,
+  // ca să reflecte ultimele valori (după un refresh).
+  useEffect(() => {
+    if (editOpen) setEditForm(buildInitialEdit());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editOpen]);
 
   // Dialog: dosar nou
   const [caseOpen, setCaseOpen] = useState(false);
@@ -135,10 +194,12 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
     }
     setSavingEdit(true);
     try {
+      const { strada, numar, oras, codPostal, ...rest } = editForm;
+      const payload = { id: client.id, ...rest, adresa: buildAdresa({ strada, numar, oras, codPostal }) };
       const res = await fetch('/api/clients', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: client.id, ...editForm }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
       toast.success('Client actualizat');
@@ -222,6 +283,134 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
       toast.error('Eroare la salvarea contractului.');
     } finally {
       setSavingContract(false);
+    }
+  };
+
+  // Contract: generare automată a documentului din datele existente
+  const [generatingContract, setGeneratingContract] = useState(false);
+
+  // Construiește contextul pentru AI din consultații, notițe, dosare și câmpurile introduse
+  const buildContractContext = (): string => {
+    const tipLabel = CONTRACT_TIP_LABELS[contractForm.tip] || 'Contract de asistență juridică';
+    const parts: string[] = [`Tip contract: ${tipLabel}`];
+    if (contractForm.numar) parts.push(`Numărul contractului: ${contractForm.numar}`);
+    if (contractForm.data) parts.push(`Data contractului: ${contractForm.data}`);
+    if (contractForm.onorariu) parts.push(`Onorariu convenit: ${Number(contractForm.onorariu).toLocaleString()} lei`);
+
+    const cases = Array.isArray(client.cases) ? (client.cases as ClientData[]) : [];
+    if (cases.length) {
+      parts.push('Dosare ale clientului:');
+      cases.slice(0, 3).forEach((c) => {
+        parts.push(`- ${String(c.numar || '')} ${String(c.denumire || '')} (${String(c.tip || '')})${c.instanta ? `, instanța ${String(c.instanta)}` : ''}`);
+      });
+    }
+
+    const consultations = Array.isArray(client.consultations) ? (client.consultations as ClientData[]) : [];
+    consultations.slice(0, 2).forEach((c) => {
+      try {
+        const sd = c.structuredData ? JSON.parse(String(c.structuredData)) : null;
+        if (sd?.natura_cazului) parts.push(`Natura cauzei (din consultație): ${sd.natura_cazului}`);
+        if (Array.isArray(sd?.fapte_cheie) && sd.fapte_cheie.length) {
+          parts.push(`Fapte cheie: ${sd.fapte_cheie.slice(0, 5).join('; ')}`);
+        }
+      } catch { /* ignorăm consultațiile fără date structurate */ }
+    });
+
+    const notes = Array.isArray(client.notes) ? (client.notes as ClientData[]) : [];
+    const publicNotes = notes.filter((n) => !n.confidential).slice(0, 3);
+    if (publicNotes.length) {
+      parts.push('Notițe relevante:');
+      publicNotes.forEach((n) => parts.push(`- ${String(n.continut || '').slice(0, 300)}`));
+    }
+
+    return parts.join('\n');
+  };
+
+  const handleGenerateContract = async () => {
+    setGeneratingContract(true);
+    const tipLabel = CONTRACT_TIP_LABELS[contractForm.tip] || 'Contract de asistență juridică';
+    try {
+      // 1. Salvăm înregistrarea contractului (apare în listă)
+      await fetch('/api/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: client.id,
+          tip: contractForm.tip,
+          numar: contractForm.numar,
+          data: contractForm.data,
+          onorariu: contractForm.onorariu ? Number(contractForm.onorariu) : null,
+        }),
+      });
+
+      // 2. Generăm documentul contractului (streaming)
+      const cases = Array.isArray(client.cases) ? (client.cases as ClientData[]) : [];
+      const recentCase = cases[0];
+      const genRes = await fetch('/api/ai/generate-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'contract',
+          tip: tipLabel,
+          clientDetails: {
+            nume: client.nume, prenume: client.prenume, idnp: client.idnp,
+            adresa: client.adresa, telefon: client.telefon, email: client.email,
+          },
+          caseDetails: recentCase
+            ? { numar: recentCase.numar, denumire: recentCase.denumire, tip: recentCase.tip, instanta: recentCase.instanta }
+            : null,
+          descriere: buildContractContext(),
+        }),
+      });
+      if (!genRes.ok || !genRes.body) throw new Error('Generare eșuată');
+
+      const reader = genRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let html = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.text) html += parsed.text;
+          } catch { /* ignorăm fragmentele incomplete */ }
+        }
+      }
+
+      if (!html.trim()) throw new Error('Document gol');
+
+      // 3. Salvăm documentul și deschidem editorul
+      const docRes = await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nume: `${tipLabel} — ${String(client.prenume || '')} ${String(client.nume || '')}`.trim(),
+          tip: 'contract',
+          categorie: 'generat',
+          clientId: client.id,
+          caseId: recentCase ? recentCase.id : null,
+          htmlContent: html,
+        }),
+      });
+      if (!docRes.ok) throw new Error('Salvare eșuată');
+      const doc = await docRes.json();
+
+      toast.success('Contract generat — se deschide editorul');
+      setContractForm({ tip: 'asistenta_juridica', numar: '', data: '', onorariu: '' });
+      setContractFormOpen(false);
+      router.push(`/documente/${doc.id}`);
+    } catch {
+      toast.error('Eroare la generarea contractului. Verificați cheia API.');
+    } finally {
+      setGeneratingContract(false);
     }
   };
 
@@ -329,6 +518,22 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
     return `${m}:${s}`;
   };
 
+  const [deletingConsultId, setDeletingConsultId] = useState<string | null>(null);
+
+  const handleDeleteConsultation = async (id: string) => {
+    setDeletingConsultId(id);
+    try {
+      const res = await fetch(`/api/consultations?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Consultație ștearsă');
+      router.refresh();
+    } catch {
+      toast.error('Eroare la ștergerea consultației.');
+    } finally {
+      setDeletingConsultId(null);
+    }
+  };
+
   const handleSaveConsultation = async () => {
     if (!consultResult) return;
     setSavingConsult(true);
@@ -398,6 +603,15 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
           </Button>
           <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setCaseOpen(true)}>
             <Folder className="h-4 w-4" /> Dosar Nou
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="text-slate-400 hover:text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+            onClick={() => setDeleteOpen(true)}
+            aria-label="Șterge client"
+          >
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -643,20 +857,32 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
                 <div className="space-y-3">
                   <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Consultații anterioare</h3>
                   {(client.consultations as ClientData[]).map((c) => (
-                    <Card key={String(c.id)} className="cursor-pointer hover:shadow-sm transition-shadow">
+                    <Card key={String(c.id)} className="hover:shadow-sm transition-shadow">
                       <CardContent className="p-4">
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2">
                             <Clock className="h-4 w-4 text-slate-400" />
                             <span className="text-sm font-medium text-slate-900 dark:text-white">
                               {c.createdAt ? format(new Date(String(c.createdAt)), 'd MMMM yyyy, HH:mm', { locale: ro }) : '-'}
                             </span>
                           </div>
-                          {!!c.durata && (
-                            <Badge variant="secondary" className="text-xs">
-                              {Math.round(Number(c.durata) / 60)} min
-                            </Badge>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {!!c.durata && (
+                              <Badge variant="secondary" className="text-xs">
+                                {Math.round(Number(c.durata) / 60)} min
+                              </Badge>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                              disabled={deletingConsultId === String(c.id)}
+                              onClick={() => handleDeleteConsultation(String(c.id))}
+                              aria-label="Șterge consultația"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
                         </div>
                         <p className="mt-2 text-sm text-slate-600 dark:text-slate-400 line-clamp-2">
                           {String(c.transcript || '').slice(0, 200)}...
@@ -763,11 +989,20 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
                         <Input type="number" value={contractForm.onorariu} onChange={(e) => setContractForm((f) => ({ ...f, onorariu: e.target.value }))} placeholder="15000" />
                       </div>
                     </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" size="sm" onClick={() => setContractFormOpen(false)}>Anulează</Button>
-                      <Button size="sm" disabled={savingContract} onClick={handleSaveContract} className="bg-indigo-600 hover:bg-indigo-700">
-                        {savingContract ? 'Se salvează...' : 'Salvează contract'}
-                      </Button>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-slate-400">
+                        Generarea creează un document de contract pe baza datelor existente, pe care îl puteți edita.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" disabled={generatingContract || savingContract} onClick={() => setContractFormOpen(false)}>Anulează</Button>
+                        <Button variant="outline" size="sm" disabled={savingContract || generatingContract} onClick={handleSaveContract}>
+                          {savingContract ? 'Se salvează...' : 'Doar salvează'}
+                        </Button>
+                        <Button size="sm" disabled={generatingContract || savingContract} onClick={handleGenerateContract} className="gap-1.5 bg-indigo-600 hover:bg-indigo-700">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          {generatingContract ? 'Se generează...' : 'Generează & deschide în editor'}
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -977,19 +1212,16 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
       </Tabs>
 
       {/* OCR Sheet */}
-      <Sheet open={ocrOpen} onOpenChange={setOcrOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-5xl p-0 flex flex-col">
-          <SheetHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-            <SheetTitle className="flex items-center gap-2">
-              <ScanLine className="h-5 w-5 text-indigo-600" />
-              OCR — Digitalizare document client
-            </SheetTitle>
-          </SheetHeader>
-          <div className="flex-1 overflow-hidden p-6">
-            <OcrSplitView clientId={String(client.id)} />
-          </div>
-        </SheetContent>
-      </Sheet>
+      <OcrSheet
+        open={ocrOpen}
+        onOpenChange={setOcrOpen}
+        title="OCR — Digitalizare document client"
+        clientId={String(client.id)}
+        cases={(Array.isArray(client.cases) ? (client.cases as ClientData[]) : []).map((c) => ({
+          id: String(c.id), numar: String(c.numar || ''), denumire: String(c.denumire || ''),
+        }))}
+        onComplete={() => { setOcrOpen(false); router.refresh(); }}
+      />
 
       {/* Dialog: Editare client */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -1023,9 +1255,28 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
               <Label htmlFor="edit-email">Email</Label>
               <Input id="edit-email" type="email" value={editForm.email} onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))} />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-adresa">Adresă</Label>
-              <Textarea id="edit-adresa" value={editForm.adresa} onChange={(e) => setEditForm((f) => ({ ...f, adresa: e.target.value }))} className="h-16" />
+            <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+              <Label className="text-sm font-semibold">Adresă</Label>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <Label htmlFor="edit-strada" className="text-xs text-slate-500">Stradă</Label>
+                  <Input id="edit-strada" value={editForm.strada} onChange={(e) => setEditForm((f) => ({ ...f, strada: e.target.value }))} placeholder="str. Mihai Eminescu" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-numar" className="text-xs text-slate-500">Număr</Label>
+                  <Input id="edit-numar" value={editForm.numar} onChange={(e) => setEditForm((f) => ({ ...f, numar: e.target.value }))} placeholder="23A" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-2 space-y-1.5">
+                  <Label htmlFor="edit-oras" className="text-xs text-slate-500">Oraș / Localitate</Label>
+                  <Input id="edit-oras" value={editForm.oras} onChange={(e) => setEditForm((f) => ({ ...f, oras: e.target.value }))} placeholder="Chișinău" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="edit-codPostal" className="text-xs text-slate-500">Cod poștal</Label>
+                  <Input id="edit-codPostal" value={editForm.codPostal} onChange={(e) => setEditForm((f) => ({ ...f, codPostal: e.target.value }))} placeholder="MD-2001" />
+                </div>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-note">Note interne</Label>
@@ -1100,6 +1351,15 @@ export function ClientProfileClient({ client }: { client: ClientData }) {
 
       {/* Modal: Generare document nou */}
       <GenerateDocumentModal open={docModalOpen} onOpenChange={setDocModalOpen} />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Ștergi clientul?"
+        description={`Se vor șterge definitiv ${String(client.prenume || '')} ${String(client.nume || '')} și toate datele asociate (dosare, documente, consultații, timp, contracte, notițe). Acțiunea nu poate fi anulată.`}
+        confirmLabel="Șterge definitiv"
+        onConfirm={handleDeleteClient}
+      />
     </div>
   );
 }

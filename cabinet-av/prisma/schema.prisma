@@ -66,6 +66,7 @@ model Document {
   filePath        String?
   htmlContent     String?
   textContent     String?
+  originalImage   String?
   containsSensitive Boolean @default(false)
   ocrStatus       String?
   ocrFields       String?
@@ -122,6 +123,7 @@ model TimeEntry {
   client          Client?   @relation(fields: [clientId], references: [id])
   caseId          String?
   case            Case?     @relation(fields: [caseId], references: [id])
+  consultationId  String?
   categorie       String
   descriere       String?
   startTime       DateTime

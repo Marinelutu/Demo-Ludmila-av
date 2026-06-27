@@ -2,16 +2,39 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Clock, Edit2, FileText, Scale, Calendar, Plus, AlertTriangle } from 'lucide-react';
+import { Clock, FileText, Scale, Calendar, Plus, AlertTriangle, FolderPlus, Trash2 } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ro } from 'date-fns/locale';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { GenerateDocumentModal } from '@/components/editor/generate-document-modal';
+import { AttachDocumentsDialog } from '@/components/editor/attach-documents-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 export function CaseProfileClient({ caseData, alerts }: { caseData: Record<string, unknown>, alerts: Record<string, unknown>[] }) {
   const now = new Date();
+  const router = useRouter();
+  const clientId = String(caseData.clientId);
+  const caseId = String(caseData.id);
+
+  const [docModalOpen, setDocModalOpen] = useState(false);
+  const [addDocsOpen, setAddDocsOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const handleDeleteCase = async () => {
+    try {
+      const res = await fetch(`/api/cases?id=${caseId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Dosar șters');
+      router.push('/dosare');
+    } catch {
+      toast.error('Eroare la ștergerea dosarului.');
+    }
+  };
 
   const [activeTab, setActiveTab] = useState('detalii');
 
@@ -90,11 +113,20 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
           </div>
         </div>
         <div className="flex gap-2 shrink-0">
-          <Button variant="outline" className="gap-2">
-            <Edit2 className="h-4 w-4" /> Editează
+          <Button variant="outline" className="gap-2" onClick={() => setAddDocsOpen(true)}>
+            <FolderPlus className="h-4 w-4" /> Adaugă documente
           </Button>
-          <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700">
+          <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setDocModalOpen(true)}>
             <FileText className="h-4 w-4" /> Generează Document
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="text-slate-400 hover:text-red-600 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+            onClick={() => setDeleteOpen(true)}
+            aria-label="Șterge dosar"
+          >
+            <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -134,7 +166,7 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
           </div>
           <div className="px-4 space-y-1">
             <p className="text-xs font-medium text-slate-500">Sumă litigiu</p>
-            <p className="text-sm font-semibold text-slate-900 dark:text-white">{caseData.sumaLitigiu ? `${(caseData.sumaLitigiu as number).toLocaleString()} MDL` : '-'}</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-white">{caseData.sumaLitigiu ? `${(caseData.sumaLitigiu as number).toLocaleString('ro-RO')} MDL` : '-'}</p>
           </div>
           <div className="px-4 space-y-1">
             <p className="text-xs font-medium text-slate-500">Data deschiderii</p>
@@ -200,18 +232,22 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    <Button className="w-full justify-start text-left" variant="outline">
+                    <Button className="w-full justify-start text-left" variant="outline" onClick={() => setDocModalOpen(true)}>
                       <FileText className="mr-2 h-4 w-4 text-indigo-600" /> Crează Document AI
                     </Button>
-                    <Button className="w-full justify-start text-left" variant="outline">
-                      <Clock className="mr-2 h-4 w-4 text-emerald-600" /> Înregistrează Timp
+                    <Button className="w-full justify-start text-left" variant="outline" onClick={() => setAddDocsOpen(true)}>
+                      <FolderPlus className="mr-2 h-4 w-4 text-emerald-600" /> Adaugă documente existente
                     </Button>
-                    <Button className="w-full justify-start text-left" variant="outline">
-                      <Edit2 className="mr-2 h-4 w-4 text-amber-600" /> Adaugă Notiță
-                    </Button>
-                    <Button className="w-full justify-start text-left" variant="outline">
-                      <Scale className="mr-2 h-4 w-4 text-blue-600" /> Cercetare AI
-                    </Button>
+                    <Link href={`/clienti/${clientId}?tab=consultatii`} className="block">
+                      <Button className="w-full justify-start text-left" variant="outline">
+                        <Clock className="mr-2 h-4 w-4 text-amber-600" /> Consultații client
+                      </Button>
+                    </Link>
+                    <Link href="/cercetare" className="block">
+                      <Button className="w-full justify-start text-left" variant="outline">
+                        <Scale className="mr-2 h-4 w-4 text-blue-600" /> Cercetare AI
+                      </Button>
+                    </Link>
                   </CardContent>
                 </Card>
               </div>
@@ -223,20 +259,37 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="text-lg">Documente dosar</CardTitle>
-                <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700">
-                  <Plus className="h-4 w-4" /> Document nou
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="gap-2" onClick={() => setAddDocsOpen(true)}>
+                    <FolderPlus className="h-4 w-4" /> Adaugă existente
+                  </Button>
+                  <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setDocModalOpen(true)}>
+                    <Plus className="h-4 w-4" /> Document nou
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {(caseData.documents as unknown[]).length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-300 py-10 text-center dark:border-slate-700">
                     <FileText className="mx-auto h-8 w-8 text-slate-400" />
                     <p className="mt-2 text-sm text-slate-500">Nu există documente în acest dosar.</p>
+                    <div className="mt-4 flex justify-center gap-2">
+                      <Button size="sm" variant="outline" className="gap-2" onClick={() => setAddDocsOpen(true)}>
+                        <FolderPlus className="h-4 w-4" /> Adaugă existente
+                      </Button>
+                      <Button size="sm" className="gap-2 bg-indigo-600 hover:bg-indigo-700" onClick={() => setDocModalOpen(true)}>
+                        <Plus className="h-4 w-4" /> Document nou
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {Array.isArray(caseData.documents) && (caseData.documents as Record<string, unknown>[]).map((doc) => (
-                      <div key={doc.id as string} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer">
+                      <Link
+                        key={doc.id as string}
+                        href={`/documente/${doc.id}`}
+                        className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer"
+                      >
                         <div className="mt-1 flex h-8 w-8 items-center justify-center rounded bg-slate-100 text-slate-500 dark:bg-slate-800">
                           <FileText className="h-4 w-4" />
                         </div>
@@ -244,7 +297,7 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
                           <p className="text-sm font-medium text-slate-900 dark:text-white leading-none">{doc.nume as string}</p>
                           <p className="text-xs text-slate-500">{format(new Date(doc.createdAt as string), 'dd MMM yyyy, HH:mm', { locale: ro })} • {doc.tip as string}</p>
                         </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 )}
@@ -300,6 +353,29 @@ export function CaseProfileClient({ caseData, alerts }: { caseData: Record<strin
           </TabsContent>
         </div>
       </Tabs>
+
+      {/* Modale: generare document & atașare documente existente la dosar */}
+      <GenerateDocumentModal
+        open={docModalOpen}
+        onOpenChange={setDocModalOpen}
+        presetClientId={clientId}
+        presetCaseId={caseId}
+      />
+      <AttachDocumentsDialog
+        open={addDocsOpen}
+        onOpenChange={setAddDocsOpen}
+        clientId={clientId}
+        caseId={caseId}
+        onAttached={() => router.refresh()}
+      />
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Ștergi dosarul?"
+        description={`Dosarul ${String(caseData.numar ?? '')} va fi șters definitiv (împreună cu termenele sale). Documentele și timpul rămân la client. Acțiunea nu poate fi anulată.`}
+        confirmLabel="Șterge definitiv"
+        onConfirm={handleDeleteCase}
+      />
     </div>
   );
 }
