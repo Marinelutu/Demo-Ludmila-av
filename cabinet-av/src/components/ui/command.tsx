@@ -47,12 +47,16 @@ function CommandDialog({
   children,
   className,
   showCloseButton = false,
+  shouldFilter,
   ...props
 }: Omit<React.ComponentProps<typeof Dialog>, "children"> & {
   title?: string
   description?: string
   className?: string
   showCloseButton?: boolean
+  // Forwarded to the underlying cmdk root. Set to `false` when results are
+  // fetched from the server so cmdk does not re-filter them client-side.
+  shouldFilter?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -68,7 +72,10 @@ function CommandDialog({
         )}
         showCloseButton={showCloseButton}
       >
-        <CommandPrimitive className="flex size-full flex-col overflow-hidden">
+        <CommandPrimitive
+          shouldFilter={shouldFilter}
+          className="flex size-full flex-col overflow-hidden"
+        >
           {children}
         </CommandPrimitive>
       </DialogContent>

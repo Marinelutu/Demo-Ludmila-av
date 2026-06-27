@@ -163,7 +163,7 @@ export function DocumentEditor({ initialContent, documentId }: DocumentEditorPro
     toast.info('Marcaj eliminat');
   }, [popover]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!editor || !documentId) return;
     setSaving(true);
     try {
@@ -179,7 +179,14 @@ export function DocumentEditor({ initialContent, documentId }: DocumentEditorPro
     } finally {
       setSaving(false);
     }
-  };
+  }, [editor, documentId]);
+
+  // Butonul "Salvează" din bara de sus (DocumentToolbar) emite acest eveniment.
+  useEffect(() => {
+    const onSave = () => handleSave();
+    window.addEventListener('document:save', onSave);
+    return () => window.removeEventListener('document:save', onSave);
+  }, [handleSave]);
 
   if (!editor) return null;
 
@@ -230,7 +237,9 @@ export function DocumentEditor({ initialContent, documentId }: DocumentEditorPro
 
       {/* Editor */}
       <div className="flex-1 overflow-y-auto bg-slate-100 p-8 dark:bg-slate-900">
-        <EditorContent editor={editor} />
+        <div className="print-document">
+          <EditorContent editor={editor} />
+        </div>
       </div>
 
       {/* Confirmation Popover */}

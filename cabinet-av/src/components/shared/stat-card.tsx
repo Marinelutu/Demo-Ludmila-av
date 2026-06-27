@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -31,6 +32,7 @@ interface StatCardProps {
   progress?: number;
   progressLabel?: string;
   variant?: 'default' | 'warning' | 'danger';
+  href?: string;
 }
 
 export function StatCard({
@@ -42,6 +44,7 @@ export function StatCard({
   progress,
   progressLabel,
   variant = 'default',
+  href,
 }: StatCardProps) {
   const isPositiveDelta = delta !== undefined && delta >= 0;
   const Icon = iconName ? ICONS[iconName] : null;
@@ -52,7 +55,15 @@ export function StatCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
     >
-      <Card className="relative overflow-hidden border-slate-200 transition-shadow hover:shadow-md dark:border-slate-800">
+      <Card
+        className={cn(
+          'relative overflow-hidden border-slate-200 transition-shadow hover:shadow-md dark:border-slate-800',
+          href && 'cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-700'
+        )}
+      >
+        {href && (
+          <Link href={href} className="absolute inset-0 z-10" aria-label={title} />
+        )}
         <CardContent className="p-6">
           <div className="flex items-start justify-between">
             <div className="space-y-2">

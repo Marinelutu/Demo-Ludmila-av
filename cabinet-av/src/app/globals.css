@@ -253,3 +253,44 @@ span[data-reason]:hover {
 .dark .legal-document th {
   background: #1e293b;
 }
+
+/* ===========================================================================
+   Print — la imprimare / Salvare ca PDF afișăm DOAR documentul, nu interfața
+   aplicației (sidebar, topbar, bare de unelte). Format A4 cu margini.
+   =========================================================================== */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-document,
+  .print-document * {
+    visibility: visible;
+  }
+  .print-document {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  /* Resetăm cadrul vizual al editorului pentru pagina tipărită */
+  .print-document .ProseMirror {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  /* Marcajele galbene de confirmare se tipăresc neutru */
+  .print-document .needs-confirmation,
+  .print-document span[data-reason] {
+    background-color: transparent !important;
+    border-bottom: none !important;
+  }
+  @page {
+    size: A4;
+    margin: 2cm;
+  }
+}

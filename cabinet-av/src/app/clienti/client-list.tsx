@@ -25,8 +25,9 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
-import { Search, Plus, MoreHorizontal, ArrowUpDown, Users } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, ArrowUpDown, Users, Trash2 } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -89,6 +90,19 @@ export function ClientListClient({ initialClients }: ClientListProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [sortField, setSortField] = useState<keyof ClientData>('nume');
   const [sortAsc, setSortAsc] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<ClientData | null>(null);
+
+  const handleDeleteClient = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/clients?id=${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Client șters');
+      router.refresh();
+    } catch {
+      toast.error('Eroare la ștergerea clientului.');
+    }
+  };
 
   const {
     register,
@@ -348,8 +362,11 @@ export function ClientListClient({ initialClients }: ClientListProps) {
                         <DropdownMenuItem onClick={() => router.push(`/clienti/${client.id}`)}>
                           Vezi profil
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          Adaugă dosar
+                        <DropdownMenuItem
+                          className="text-red-600 focus:text-red-600"
+                          onClick={() => setDeleteTarget(client)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Șterge client
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -360,6 +377,15 @@ export function ClientListClient({ initialClients }: ClientListProps) {
           </TableBody>
         </Table>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Ștergi clientul?"
+        description={`Se vor șterge definitiv ${deleteTarget?.prenume ?? ''} ${deleteTarget?.nume ?? ''} și toate datele asociate (dosare, documente, consultații, timp, contracte, notițe). Acțiunea nu poate fi anulată.`}
+        confirmLabel="Șterge definitiv"
+        onConfirm={handleDeleteClient}
+      />
     </div>
   );
 }

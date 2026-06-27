@@ -15,8 +15,10 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Search, Plus, MoreHorizontal, FolderOpen } from 'lucide-react';
+import { Search, Plus, MoreHorizontal, FolderOpen, Trash2 } from 'lucide-react';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +32,19 @@ export function CasesListClient({ initialCases }: { initialCases: CaseData[] }) 
   const router = useRouter();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('toate');
+  const [deleteTarget, setDeleteTarget] = useState<CaseData | null>(null);
+
+  const handleDeleteCase = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/cases?id=${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Dosar șters');
+      router.refresh();
+    } catch {
+      toast.error('Eroare la ștergerea dosarului.');
+    }
+  };
 
   const getStatusVariant = (stare: string) => {
     switch (stare) {
@@ -182,8 +197,11 @@ export function CasesListClient({ initialCases }: { initialCases: CaseData[] }) 
                         <DropdownMenuItem onClick={() => router.push(`/dosare/${c.id}`)}>
                           Vezi detalii
                         </DropdownMenuItem>
-                        <DropdownMenuItem>
-                          Adaugă document
+                        <DropdownMenuItem
+                          className="text-red-600 focus:text-red-600"
+                          onClick={() => setDeleteTarget(c)}
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" /> Șterge dosar
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -194,6 +212,15 @@ export function CasesListClient({ initialCases }: { initialCases: CaseData[] }) 
           </TableBody>
         </Table>
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Ștergi dosarul?"
+        description={`Dosarul ${String(deleteTarget?.numar ?? '')} va fi șters definitiv (împreună cu termenele sale). Documentele și timpul rămân la client. Acțiunea nu poate fi anulată.`}
+        confirmLabel="Șterge definitiv"
+        onConfirm={handleDeleteCase}
+      />
     </div>
   );
 }

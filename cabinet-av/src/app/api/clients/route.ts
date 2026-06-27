@@ -54,6 +54,35 @@ export async function POST(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = request.nextUrl.searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'ID client lipsă' }, { status: 400 });
+
+    // Ștergem tot ce aparține clientului (cascade manual — SQLite/Prisma fără FK cascade).
+    const cases = await prisma.case.findMany({ where: { clientId: id }, select: { id: true } });
+    const caseIds = cases.map((c) => c.id);
+
+    await prisma.$transaction([
+      prisma.deadline.deleteMany({ where: { caseId: { in: caseIds } } }),
+      prisma.document.deleteMany({ where: { OR: [{ clientId: id }, { caseId: { in: caseIds } }] } }),
+      prisma.email.deleteMany({ where: { OR: [{ clientId: id }, { caseId: { in: caseIds } }] } }),
+      prisma.timeEntry.deleteMany({ where: { OR: [{ clientId: id }, { caseId: { in: caseIds } }] } }),
+      prisma.consultation.deleteMany({ where: { clientId: id } }),
+      prisma.contract.deleteMany({ where: { clientId: id } }),
+      prisma.note.deleteMany({ where: { clientId: id } }),
+      prisma.conversation.deleteMany({ where: { clientId: id } }),
+      prisma.case.deleteMany({ where: { clientId: id } }),
+      prisma.client.delete({ where: { id } }),
+    ]);
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Delete client error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
 const clientUpdateSchema = clientSchema.partial().extend({
   id: z.string().min(1),
   status: z.enum(['activ', 'arhivat']).optional(),

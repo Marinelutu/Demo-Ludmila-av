@@ -8,8 +8,10 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Search, Plus, FileText, Grid, List, MoreHorizontal, Upload, ScanLine } from 'lucide-react';
+import { Search, Plus, FileText, Grid, List, MoreHorizontal, Upload, ScanLine, Trash2, Download } from 'lucide-react';
+import { toast } from 'sonner';
 import { EmptyState } from '@/components/shared/empty-state';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -17,8 +19,7 @@ import { Card, CardFooter } from '@/components/ui/card';
 import { format } from 'date-fns';
 import { ro } from 'date-fns/locale';
 import { GenerateDocumentModal } from '@/components/editor/generate-document-modal';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { OcrSplitView } from '@/components/ocr/ocr-split-view';
+import { OcrSheet } from '@/components/ocr/ocr-sheet';
 
 export function DocumentsListClient({ initialDocuments }: { initialDocuments: Record<string, unknown>[] }) {
   const router = useRouter();
@@ -26,6 +27,28 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
   const [generateOpen, setGenerateOpen] = useState(false);
   const [ocrOpen, setOcrOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Record<string, unknown> | null>(null);
+
+  const handleDeleteDoc = async () => {
+    if (!deleteTarget) return;
+    try {
+      const res = await fetch(`/api/documents?id=${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error();
+      toast.success('Document șters');
+      router.refresh();
+    } catch {
+      toast.error('Eroare la ștergerea documentului.');
+    }
+  };
+
+  const downloadPdf = (doc: Record<string, unknown>) => {
+    const a = document.createElement('a');
+    a.href = `/api/documents/${doc.id}/pdf`;
+    a.download = `${String(doc.nume)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
 
   const filteredDocs = useMemo(() => {
     if (search.length < 2) return initialDocuments;
@@ -153,7 +176,12 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => router.push(`/documente/${doc.id}`)}>Deschide</DropdownMenuItem>
-                        <DropdownMenuItem>Descarcă PDF</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => downloadPdf(doc)}>
+                          <Download className="mr-2 h-4 w-4" /> Descarcă PDF
+                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setDeleteTarget(doc)}>
+                          <Trash2 className="mr-2 h-4 w-4" /> Șterge
+                        </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>
@@ -175,6 +203,24 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
                   <Badge variant="secondary" className="text-[10px] bg-white/80 backdrop-blur-sm dark:bg-slate-950/80">
                     {String(doc.tip)}
                   </Badge>
+                </div>
+                <div className="absolute top-2 left-2" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 bg-white/80 backdrop-blur-sm dark:bg-slate-950/80">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={() => router.push(`/documente/${doc.id}`)}>Deschide</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => downloadPdf(doc)}>
+                        <Download className="mr-2 h-4 w-4" /> Descarcă PDF
+                      </DropdownMenuItem>
+                      <DropdownMenuItem className="text-red-600 focus:text-red-600" onClick={() => setDeleteTarget(doc)}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Șterge
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
                 <div className="flex-1 p-4 overflow-hidden">
                   <div className="w-full h-2 bg-slate-200 rounded mb-2 dark:bg-slate-700" />
@@ -206,19 +252,25 @@ export function DocumentsListClient({ initialDocuments }: { initialDocuments: Re
       <GenerateDocumentModal open={generateOpen} onOpenChange={setGenerateOpen} />
 
       {/* OCR Sheet */}
-      <Sheet open={ocrOpen} onOpenChange={setOcrOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-5xl p-0 flex flex-col">
-          <SheetHeader className="px-6 py-4 border-b border-slate-200 dark:border-slate-800">
-            <SheetTitle className="flex items-center gap-2">
-              <ScanLine className="h-5 w-5 text-indigo-600" />
-              OCR — Digitalizare document
-            </SheetTitle>
-          </SheetHeader>
-          <div className="flex-1 overflow-hidden p-6">
-            <OcrSplitView />
-          </div>
-        </SheetContent>
-      </Sheet>
+      <OcrSheet
+        open={ocrOpen}
+        onOpenChange={setOcrOpen}
+        mode="chooser"
+        onComplete={(clientId) => {
+          setOcrOpen(false);
+          if (clientId) router.push(`/clienti/${clientId}`);
+          else router.refresh();
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Ștergi documentul?"
+        description={`„${String(deleteTarget?.nume ?? '')}" va fi șters definitiv. Acțiunea nu poate fi anulată.`}
+        confirmLabel="Șterge definitiv"
+        onConfirm={handleDeleteDoc}
+      />
     </div>
   );
 }

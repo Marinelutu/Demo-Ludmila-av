@@ -33,6 +33,28 @@ const caseSchema = z.object({
   descriere: z.string().optional().or(z.literal('')),
 });
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const id = request.nextUrl.searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'ID dosar lipsă' }, { status: 400 });
+
+    // Documentele, emailurile și timpul rămân la client (le dezasociem de dosar),
+    // termenele aparțin exclusiv dosarului → le ștergem.
+    await prisma.$transaction([
+      prisma.document.updateMany({ where: { caseId: id }, data: { caseId: null } }),
+      prisma.email.updateMany({ where: { caseId: id }, data: { caseId: null } }),
+      prisma.timeEntry.updateMany({ where: { caseId: id }, data: { caseId: null } }),
+      prisma.deadline.deleteMany({ where: { caseId: id } }),
+      prisma.case.delete({ where: { id } }),
+    ]);
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('Delete case error:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const json = await request.json();

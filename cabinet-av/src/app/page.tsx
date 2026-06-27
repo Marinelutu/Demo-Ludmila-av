@@ -4,6 +4,7 @@ import { getMottoZilnic } from '@/data/motto';
 import { prisma } from '@/lib/prisma';
 import { StatCard } from '@/components/shared/stat-card';
 import { LegislativeAlertsDrawer } from '@/components/shared/legislative-alerts-drawer';
+import { HomeOcrButton } from '@/components/ocr/home-ocr-button';
 import { Mail, Calendar } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,12 +67,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      {/* Motto */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 px-6 py-4 dark:border-indigo-900/30 dark:bg-indigo-950/20">
-        <p className="text-sm font-medium italic text-indigo-800 dark:text-indigo-300">
-          &quot;{motto.text}&quot;
-        </p>
-        <p className="mt-1 text-xs text-indigo-600 dark:text-indigo-400">— {motto.autor}</p>
+      {/* Motto + acțiune rapidă OCR */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex-1 rounded-xl border border-indigo-100 bg-indigo-50/50 px-6 py-4 dark:border-indigo-900/30 dark:bg-indigo-950/20">
+          <p className="text-sm font-medium italic text-indigo-800 dark:text-indigo-300">
+            &quot;{motto.text}&quot;
+          </p>
+          <p className="mt-1 text-xs text-indigo-600 dark:text-indigo-400">— {motto.autor}</p>
+        </div>
+        <HomeOcrButton />
       </div>
 
       {/* Stats */}
@@ -82,6 +86,7 @@ export default async function DashboardPage() {
           iconName="folder"
           delta={2}
           deltaLabel="vs luna trecută"
+          href="/dosare"
         />
         <StatCard
           title="Clienți Activi"
@@ -89,6 +94,7 @@ export default async function DashboardPage() {
           iconName="users"
           delta={1}
           deltaLabel="vs luna trecută"
+          href="/clienti"
         />
         <StatCard
           title="Ore (7 zile)"
@@ -96,12 +102,14 @@ export default async function DashboardPage() {
           iconName="clock"
           progress={Math.round(progressHours)}
           progressLabel="din 40h target"
+          href="/timp"
         />
         <StatCard
           title="Termene (7 zile)"
           value={deadlinesNext7Days}
           iconName="alert"
           variant={deadlinesNext7Days > 3 ? 'warning' : 'default'}
+          href="/dosare"
         />
       </div>
 

@@ -40,9 +40,12 @@ interface Case {
 interface GenerateDocumentModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  // Pre-selectare (ex. la deschidere dintr-un dosar) — clientul și dosarul vin completate.
+  presetClientId?: string;
+  presetCaseId?: string;
 }
 
-export function GenerateDocumentModal({ open, onOpenChange }: GenerateDocumentModalProps) {
+export function GenerateDocumentModal({ open, onOpenChange, presetClientId, presetCaseId }: GenerateDocumentModalProps) {
   const router = useRouter();
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -63,8 +66,11 @@ export function GenerateDocumentModal({ open, onOpenChange }: GenerateDocumentMo
         .then((r) => r.json())
         .then((data) => setClients(Array.isArray(data) ? data : []))
         .catch(() => {});
+      // Pre-completăm clientul/dosarul când modalul e deschis dintr-un context dat
+      if (presetClientId) setSelectedClient(presetClientId);
+      if (presetCaseId) setSelectedCase(presetCaseId);
     }
-  }, [open]);
+  }, [open, presetClientId, presetCaseId]);
 
   useEffect(() => {
     if (!selectedClient) { setCases([]); setSelectedCase(''); return; }
@@ -155,7 +161,7 @@ export function GenerateDocumentModal({ open, onOpenChange }: GenerateDocumentMo
           tip: selectedType,
           categorie: 'generat',
           clientId: selectedClient || null,
-          caseId: selectedCase || null,
+          caseId: selectedCase && selectedCase !== 'none' ? selectedCase : null,
           htmlContent: generatedHtml,
         }),
       });
